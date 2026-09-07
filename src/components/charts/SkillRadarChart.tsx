@@ -1,0 +1,70 @@
+'use client'
+
+import {
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+} from 'recharts'
+
+interface SkillRadarProps {
+  data: { key: string; label: string; pre: number | null; post: number | null }[]
+}
+
+export default function SkillRadarChart({ data }: SkillRadarProps) {
+  const chartData = data.map((d) => ({
+    dimension: d.label,
+    'Pre-test': d.pre ?? 0,
+    'Post-test': d.post ?? 0,
+  }))
+
+  return (
+    <ResponsiveContainer width="100%" height={350}>
+      <RadarChart data={chartData} cx="50%" cy="50%" outerRadius="75%">
+        <PolarGrid stroke="#eaeaea" />
+        <PolarAngleAxis
+          dataKey="dimension"
+          tick={{ fontSize: 11, fill: '#666666' }}
+        />
+        <PolarRadiusAxis
+          angle={90}
+          domain={[0, 100]}
+          tick={{ fontSize: 10, fill: '#999999' }}
+          tickCount={6}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: '#fff',
+            border: '1px solid #eaeaea',
+            borderRadius: '8px',
+            fontSize: '12px',
+          }}
+          formatter={(value) => [`${value ?? 0}%`]}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: '12px' }}
+        />
+        <Radar
+          name="Pre-test"
+          dataKey="Pre-test"
+          stroke="#9333ea"
+          fill="#9333ea"
+          fillOpacity={0.15}
+          strokeWidth={2}
+        />
+        <Radar
+          name="Post-test"
+          dataKey="Post-test"
+          stroke="#16a34a"
+          fill="#16a34a"
+          fillOpacity={0.15}
+          strokeWidth={2}
+        />
+      </RadarChart>
+    </ResponsiveContainer>
+  )
+}

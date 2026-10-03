@@ -36,7 +36,7 @@ export default function QuizPage({ params }: { params: Promise<{ courseId: strin
   const courseId = resolvedParams.courseId
 
   const searchParams = useSearchParams()
-  const testType = searchParams.get('type') === 'pre' ? 'pre' : 'post'
+  const testType = searchParams.get('type') === 'post' ? 'post' : 'pre'
 
   const [course, setCourse] = useState<Course | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
@@ -45,28 +45,36 @@ export default function QuizPage({ params }: { params: Promise<{ courseId: strin
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ score: number; total: number; percentage: number } | null>(null)
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const supabase = useMemo(() => createClient(), [])
   const { toast } = useToast()
 
   useEffect(() => {
     async function loadQuizData() {
+      setError(null)
       // 1. ดึงชื่อวิชา
-      const { data: courseData } = await supabase
+      const { data: courseData, error: courseError } = await supabase
         .from('courses')
         .select('title')
         .eq('id', courseId)
         .single()
 
-      if (courseData) setCourse(courseData)
+      if (courseError) {
+        setError(courseError.message)
+      } else if (courseData) {
+        setCourse(courseData)
+      }
 
       // 2. ดึงข้อสอบทั้งหมดของวิชานี้
-      const { data: questionsData } = await supabase
+      const { data: questionsData, error: questionsError } = await supabase
         .from('questions')
         .select('id, question_text, options, correct_answer, lesson_id, skill_dimension')
         .eq('course_id', courseId)
 
-      if (questionsData && questionsData.length > 0) {
+      if (questionsError) {
+        setError(questionsError.message)
+      } else if (questionsData && questionsData.length > 0) {
         const parsedQuestions = questionsData.map((q) => ({
           ...q,
           options:
@@ -165,7 +173,6 @@ export default function QuizPage({ params }: { params: Promise<{ courseId: strin
 
       setResult({ score, total, percentage })
     } catch (err: any) {
-      console.error('Error submitting quiz:', err)
       toast('เกิดข้อผิดพลาดในการบันทึกคะแนน: ' + (err.message || 'กรุณาลองใหม่'), 'error')
     } finally {
       setSubmitting(false)
@@ -186,6 +193,21 @@ export default function QuizPage({ params }: { params: Promise<{ courseId: strin
           <div className="flex justify-end">
             <Skeleton className="h-12 w-32 rounded-xl" />
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div className="bg-white border border-border rounded-xl p-8 text-center max-w-md space-y-4">
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดข้อสอบ: {error}
+          </div>
+          <Link href={`/dashboard/student/courses/${courseId}`} className="inline-block bg-primary text-ink px-4 py-2 rounded-lg text-sm">
+            กลับไปที่คอร์สเรียน
+          </Link>
         </div>
       </div>
     )

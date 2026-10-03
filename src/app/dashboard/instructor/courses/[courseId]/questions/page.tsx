@@ -44,6 +44,8 @@ export default function InstructorQuestionsPage() {
   const [courseTitle, setCourseTitle] = useState('')
   const [selectedLessonFilter, setSelectedLessonFilter] = useState<string>('all')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState(false)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [targetLessonId, setTargetLessonId] = useState('')
@@ -59,29 +61,56 @@ export default function InstructorQuestionsPage() {
 
   const fetchData = async () => {
     setLoading(true)
-    const { data: course } = await supabase.from('courses').select('title').eq('id', courseId).single()
-    if (course) setCourseTitle(course.title)
+    setError(null)
 
-    const { data: lessonsData } = await supabase
+    // P2-5: ตรวจสิทธิ์ผู้สอน — เข้าถึงได้เฉพาะคอร์สที่ตนเองสร้าง
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError || !authData?.user) {
+      setBlocked(true)
+      setError(authError?.message || 'กรุณาเข้าสู่ระบบอีกครั้ง')
+      setLoading(false)
+      return
+    }
+    const { data: course, error: courseError } = await supabase.from('courses').select('title, created_by').eq('id', courseId).single()
+    if (courseError) {
+      setBlocked(true)
+      setError(courseError.message)
+      setLoading(false)
+      return
+    }
+    setCourseTitle(course.title)
+    if (course.created_by !== authData.user.id) {
+      setBlocked(true)
+      setError('คุณไม่มีสิทธิ์จัดการคอร์สนี้ (สร้างโดยผู้สอนรายอื่น)')
+      setLoading(false)
+      return
+    }
+    setBlocked(false)
+
+    const { data: lessonsData, error: lessonsError } = await supabase
       .from('lessons')
       .select('id, title, order_index')
       .eq('course_id', courseId)
       .order('order_index', { ascending: true })
 
-    if (lessonsData) {
+    if (lessonsError) {
+      setError(lessonsError.message)
+    } else if (lessonsData) {
       setLessons(lessonsData)
       if (lessonsData.length > 0 && !targetLessonId) {
         setTargetLessonId(lessonsData[0].id)
       }
     }
 
-    const { data: qData } = await supabase
+    const { data: qData, error: qError } = await supabase
       .from('questions')
       .select('*, lessons(title, order_index)')
       .eq('course_id', courseId)
       .order('created_at', { ascending: true })
 
-    if (qData) {
+    if (qError) {
+      setError(qError.message)
+    } else if (qData) {
       setQuestions(
         qData.map((q) => {
           let parsedOptions: string[] = []
@@ -103,6 +132,10 @@ export default function InstructorQuestionsPage() {
 
   const handleCreateQuestion = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (blocked) {
+      toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
+      return
+    }
     if (!targetLessonId) {
       toast('กรุณาเลือกบทเรียนสำหรับข้อสอบนี้', 'warning')
       return
@@ -149,6 +182,10 @@ export default function InstructorQuestionsPage() {
 
   const confirmDeleteQuestion = async () => {
     if (!deleteId) return
+    if (blocked) {
+      toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
+      return
+    }
     const { error } = await supabase.from('questions').delete().eq('id', deleteId)
     if (error) {
       toast('เกิดข้อผิดพลาด: ' + error.message, 'error')
@@ -201,6 +238,7 @@ export default function InstructorQuestionsPage() {
             </p>
           </div>
 
+          {!blocked && (
           <button
             onClick={() => setIsModalOpen(true)}
             disabled={lessons.length === 0}
@@ -208,6 +246,7 @@ export default function InstructorQuestionsPage() {
           >
             <Plus className="w-4 h-4" /> เพิ่มข้อสอบเข้าบทเรียน
           </button>
+        )}
         </div>
 
         <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-border">
@@ -333,7 +372,11 @@ export default function InstructorQuestionsPage() {
           </div>
         )}
 
-        {filteredQuestions.length === 0 ? (
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดข้อสอบ: {error}
+          </div>
+        ) : filteredQuestions.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-12 text-center text-secondary">
             ยังไม่มีข้อสอบในเงื่อนไขที่เลือก
           </div>

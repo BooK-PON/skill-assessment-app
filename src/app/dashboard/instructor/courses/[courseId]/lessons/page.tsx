@@ -27,6 +27,8 @@ export default function InstructorLessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [courseTitle, setCourseTitle] = useState('')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState(false)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -41,20 +43,47 @@ export default function InstructorLessonsPage() {
 
   const fetchData = async () => {
     setLoading(true)
-    const { data: course } = await supabase
+    setError(null)
+
+    // P2-5: ตรวจสิทธิ์ผู้สอน — เข้าถึงได้เฉพาะคอร์สที่ตนเองสร้าง
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError || !authData?.user) {
+      setBlocked(true)
+      setError(authError?.message || 'กรุณาเข้าสู่ระบบอีกครั้ง')
+      setLoading(false)
+      return
+    }
+    const { data: course, error: courseError } = await supabase
       .from('courses')
-      .select('title')
+      .select('title, created_by')
       .eq('id', courseId)
       .single()
-    if (course) setCourseTitle(course.title)
+    if (courseError) {
+      setBlocked(true)
+      setError(courseError.message)
+      setLoading(false)
+      return
+    }
+    setCourseTitle(course.title)
+    if (course.created_by !== authData.user.id) {
+      setBlocked(true)
+      setError('คุณไม่มีสิทธิ์จัดการคอร์สนี้ (สร้างโดยผู้สอนรายอื่น)')
+      setLoading(false)
+      return
+    }
+    setBlocked(false)
 
-    const { data: lessonsData } = await supabase
+    const { data: lessonsData, error: lessonsError } = await supabase
       .from('lessons')
       .select('*')
       .eq('course_id', courseId)
       .order('order_index', { ascending: true })
 
-    if (lessonsData) setLessons(lessonsData)
+    if (lessonsError) {
+      setError(lessonsError.message)
+    } else if (lessonsData) {
+      setLessons(lessonsData)
+    }
     setLoading(false)
   }
 
@@ -64,6 +93,10 @@ export default function InstructorLessonsPage() {
 
   const handleCreateLesson = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (blocked) {
+      toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
+      return
+    }
     if (!title.trim()) {
       toast('กรุณากรอกชื่อบทเรียน', 'warning')
       return
@@ -112,6 +145,10 @@ export default function InstructorLessonsPage() {
 
   const confirmDeleteLesson = async () => {
     if (!deleteTarget) return
+    if (blocked) {
+      toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
+      return
+    }
 
     const { error } = await supabase.from('lessons').delete().eq('id', deleteTarget.id)
     if (error) {
@@ -158,12 +195,14 @@ export default function InstructorLessonsPage() {
             <p className="text-secondary text-xs">มีบทเรียนแล้ว {lessons.length} บท</p>
           </div>
 
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-medium px-4 py-2 rounded-xl text-sm transition shadow-sm"
-          >
-            <Plus className="w-4 h-4" /> เพิ่มบทเรียนใหม่
-          </button>
+          {!blocked && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-medium px-4 py-2 rounded-xl text-sm transition shadow-sm"
+            >
+              <Plus className="w-4 h-4" /> เพิ่มบทเรียนใหม่
+            </button>
+          )}
         </div>
 
         {isModalOpen && (
@@ -247,7 +286,11 @@ export default function InstructorLessonsPage() {
           </div>
         )}
 
-        {lessons.length === 0 ? (
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดบทเรียน: {error}
+          </div>
+        ) : lessons.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-12 text-center text-secondary">
             ยังไม่มีบทเรียนในรายวิชานี้ กดปุ่ม "เพิ่มบทเรียนใหม่" ด้านบนเพื่อเริ่มสร้าง
           </div>

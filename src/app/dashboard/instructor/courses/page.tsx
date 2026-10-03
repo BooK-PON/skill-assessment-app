@@ -20,6 +20,7 @@ interface Course {
 export default function InstructorCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // State สำหรับ Modal เพิ่มวิชาใหม่
   const [isCreating, setIsCreating] = useState(false)
@@ -32,15 +33,26 @@ export default function InstructorCoursesPage() {
   const supabase = useMemo(() => createClient(), [])
   const { toast } = useToast()
 
-  // ดึงข้อมูลรายวิชาทั้งหมด (ใช้ Relational Count แทน N+1 Query)
+  // ดึงข้อมูลรายวิชาเฉพาะที่ผู้สอนคนนี้เป็นเจ้าของ (กรอง created_by) เพื่อกันเห็นคอร์สคนอื่น
   const fetchCourses = async () => {
     setLoading(true)
-    const { data: coursesData } = await supabase
+    setError(null)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      setError(userError?.message || 'ไม่พบผู้ใช้งานที่เข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่อีกครั้ง')
+      setLoading(false)
+      return
+    }
+
+    const { data: coursesData, error: coursesError } = await supabase
       .from('courses')
       .select('*, lessons(count), questions(count)')
+      .eq('created_by', user.id)
       .order('created_at', { ascending: false })
 
-    if (coursesData) {
+    if (coursesError) {
+      setError(coursesError.message)
+    } else if (coursesData) {
       const coursesWithCount = coursesData.map((course: any) => ({
         ...course,
         lessons_count: course.lessons?.[0]?.count || 0,
@@ -224,7 +236,11 @@ export default function InstructorCoursesPage() {
         )}
 
         {/* รายการคอร์สเรียน */}
-        {courses.length === 0 ? (
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดรายวิชา: {error}
+          </div>
+        ) : courses.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-12 text-center space-y-3">
             <p className="text-secondary">ยังไม่มีรายวิชาในระบบผู้สอน</p>
             <button

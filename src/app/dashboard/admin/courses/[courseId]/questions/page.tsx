@@ -44,6 +44,7 @@ export default function AdminQuestionsPage() {
   const [courseTitle, setCourseTitle] = useState('')
   const [selectedLessonFilter, setSelectedLessonFilter] = useState<string>('all')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -60,18 +61,25 @@ export default function AdminQuestionsPage() {
 
   const fetchData = async () => {
     setLoading(true)
+    setError(null)
     // ดึงชื่อวิชา
-    const { data: course } = await supabase.from('courses').select('title').eq('id', courseId).single()
-    if (course) setCourseTitle(course.title)
+    const { data: course, error: courseError } = await supabase.from('courses').select('title').eq('id', courseId).single()
+    if (courseError) {
+      setError(courseError.message)
+    } else if (course) {
+      setCourseTitle(course.title)
+    }
 
     // ดึงบทเรียนทั้งหมดในวิชานี้
-    const { data: lessonsData } = await supabase
+    const { data: lessonsData, error: lessonsError } = await supabase
       .from('lessons')
       .select('id, title, order_index')
       .eq('course_id', courseId)
       .order('order_index', { ascending: true })
 
-    if (lessonsData) {
+    if (lessonsError) {
+      setError(lessonsError.message)
+    } else if (lessonsData) {
       setLessons(lessonsData)
       if (lessonsData.length > 0 && !targetLessonId) {
         setTargetLessonId(lessonsData[0].id)
@@ -79,13 +87,15 @@ export default function AdminQuestionsPage() {
     }
 
     // ดึงข้อสอบทั้งหมดพร้อมชื่อบทเรียน
-    const { data: qData } = await supabase
+    const { data: qData, error: qError } = await supabase
       .from('questions')
       .select('*, lessons(title, order_index)')
       .eq('course_id', courseId)
       .order('created_at', { ascending: true })
 
-    if (qData) {
+    if (qError) {
+      setError(qError.message)
+    } else if (qData) {
       setQuestions(
         qData.map((q) => {
           let parsedOptions: string[] = []
@@ -342,7 +352,11 @@ export default function AdminQuestionsPage() {
         )}
 
         {/* List ข้อสอบ */}
-        {filteredQuestions.length === 0 ? (
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดข้อสอบ: {error}
+          </div>
+        ) : filteredQuestions.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-12 text-center text-secondary">
             ยังไม่มีข้อสอบในเงื่อนไขที่เลือก
           </div>

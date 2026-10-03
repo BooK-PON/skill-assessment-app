@@ -27,6 +27,7 @@ export default function AdminLessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [courseTitle, setCourseTitle] = useState('')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -42,22 +43,31 @@ export default function AdminLessonsPage() {
 
   const fetchData = async () => {
     setLoading(true)
+    setError(null)
     // ดึงชื่อวิชา
-    const { data: course } = await supabase
+    const { data: course, error: courseError } = await supabase
       .from('courses')
       .select('title')
       .eq('id', courseId)
       .single()
-    if (course) setCourseTitle(course.title)
+    if (courseError) {
+      setError(courseError.message)
+    } else if (course) {
+      setCourseTitle(course.title)
+    }
 
     // ดึงบทเรียนทั้งหมดในวิชานี้
-    const { data: lessonsData } = await supabase
+    const { data: lessonsData, error: lessonsError } = await supabase
       .from('lessons')
       .select('*')
       .eq('course_id', courseId)
       .order('order_index', { ascending: true })
 
-    if (lessonsData) setLessons(lessonsData)
+    if (lessonsError) {
+      setError(lessonsError.message)
+    } else if (lessonsData) {
+      setLessons(lessonsData)
+    }
     setLoading(false)
   }
 
@@ -255,7 +265,11 @@ export default function AdminLessonsPage() {
         )}
 
         {/* List บทเรียน */}
-        {lessons.length === 0 ? (
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดบทเรียน: {error}
+          </div>
+        ) : lessons.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-12 text-center text-secondary">
             ยังไม่มีบทเรียนในรายวิชานี้ กดปุ่ม "เพิ่มบทเรียนใหม่" ด้านบนเพื่อเริ่มสร้าง
           </div>

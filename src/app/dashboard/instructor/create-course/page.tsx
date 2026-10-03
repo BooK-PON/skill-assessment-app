@@ -172,7 +172,7 @@ export default function CreateCoursePage() {
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-lg text-sm">
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-lg text-sm">
             {error}
           </div>
         )}

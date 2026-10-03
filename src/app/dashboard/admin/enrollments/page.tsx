@@ -73,7 +73,7 @@ export default function AdminEnrollmentsPage() {
         </div>
 
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/50 rounded-lg p-3 text-sm text-rose-600">
+          <div role="alert" className="bg-rose-500/10 border border-rose-500/50 rounded-lg p-3 text-sm text-rose-600">
             {error}
           </div>
         )}

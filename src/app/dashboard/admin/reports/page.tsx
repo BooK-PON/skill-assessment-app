@@ -43,7 +43,7 @@ export default function AnalyticsReportPage() {
               courseTitle: item.courses?.title || 'วิชาเรียน',
               preTest: null,
               postTest: null,
-              totalScore: item.total_questions || 20,
+              totalScore: item.total_questions || 1,
             }
           }
 

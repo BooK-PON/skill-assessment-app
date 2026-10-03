@@ -23,6 +23,7 @@ interface Course {
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // State สำหรับ Modal เพิ่มวิชาใหม่
   const [isCreating, setIsCreating] = useState(false)
@@ -46,12 +47,15 @@ export default function AdminCoursesPage() {
   // ฟังก์ชันดึงข้อมูลรายวิชาพร้อมจำนวนบทเรียนและข้อสอบ (Relational Count แทน N+1)
   const fetchCourses = async () => {
     setLoading(true)
-    const { data: coursesData } = await supabase
+    setError(null)
+    const { data: coursesData, error: coursesError } = await supabase
       .from('courses')
       .select('*, lessons(count), questions(count), enrollments(count)')
       .order('created_at', { ascending: false })
 
-    if (coursesData) {
+    if (coursesError) {
+      setError(coursesError.message)
+    } else if (coursesData) {
       const coursesWithCount = coursesData.map((course: any) => ({
         ...course,
         lessons_count: course.lessons?.[0]?.count || 0,
@@ -360,7 +364,11 @@ export default function AdminCoursesPage() {
         />
 
         {/* SECTION: รายการคอร์สเรียนทั้งหมด */}
-        {courses.length === 0 ? (
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดรายวิชา: {error}
+          </div>
+        ) : courses.length === 0 ? (
           <div className="bg-white border border-border rounded-2xl p-12 text-center space-y-3">
             <p className="text-secondary">ยังไม่มีรายวิชาในระบบ</p>
             <button

@@ -20,6 +20,7 @@ export default function DashboardOverviewPage() {
   const [role, setRole] = useState<string | null>(null)
   const [stats, setStats] = useState<StatCard[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -29,11 +30,17 @@ export default function DashboardOverviewPage() {
         return
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
+
+      if (profileError) {
+        setError('ไม่สามารถโหลดข้อมูลผู้ใช้งาน: ' + profileError.message)
+        setLoading(false)
+        return
+      }
 
       const r = profile?.role
       if (!r) {
@@ -49,27 +56,37 @@ export default function DashboardOverviewPage() {
           supabase.from('courses').select('id', { count: 'exact', head: true }),
           supabase.from('enrollments').select('enrollment_id', { count: 'exact', head: true }),
         ])
+        const countError = users.error || courses.error || enrollments.error
+        if (countError) {
+          setError('เกิดข้อผิดพลาดในการโหลดสถิติ: ' + countError.message)
+        }
         setStats([
           { label: 'ผู้ใช้งานทั้งหมด', value: String(users.count ?? 0), color: 'text-info', icon: <Users className="w-8 h-8 text-info/30" />, href: '/dashboard/admin/users' },
           { label: 'รายวิชาทั้งหมด', value: String(courses.count ?? 0), color: 'text-purple-600', icon: <BookOpen className="w-8 h-8 text-purple-400/30" />, href: '/dashboard/admin/courses' },
           { label: 'รายการลงทะเบียน', value: String(enrollments.count ?? 0), color: 'text-success', icon: <GraduationCap className="w-8 h-8 text-success/30" />, href: '/dashboard/admin/enrollments' },
         ])
       } else if (r === 'instructor' || r === 'teacher') {
-        const { count: courses } = await supabase
+        const { count: courses, error: coursesError } = await supabase
           .from('courses')
           .select('id', { count: 'exact', head: true })
           .eq('created_by', user.id)
+        if (coursesError) {
+          setError('เกิดข้อผิดพลาดในการโหลดสถิติ: ' + coursesError.message)
+        }
         setStats([
           { label: 'รายวิชาที่จัดการ', value: String(courses ?? 0), color: 'text-purple-600', icon: <BookOpen className="w-8 h-8 text-purple-400/30" />, href: '/dashboard/instructor/courses' },
           { label: 'งานตรวจสอบคะแนน', value: 'ดูรายงาน', color: 'text-info', icon: <BarChart3 className="w-8 h-8 text-info/30" />, href: '/dashboard/instructor/reports' },
         ])
       } else {
         // Student
-        const { data: enrollRows } = await supabase
+        const { data: enrollRows, error: enrollError } = await supabase
           .from('enrollments')
           .select('status')
           .eq('user_id', user.id)
 
+        if (enrollError) {
+          setError('เกิดข้อผิดพลาดในการโหลดข้อมูลการเรียน: ' + enrollError.message)
+        }
         const active = (enrollRows || []).filter((e) => e.status === 'active').length
         const completed = (enrollRows || []).filter((e) => e.status === 'completed').length
         setStats([
@@ -117,6 +134,12 @@ export default function DashboardOverviewPage() {
             {role === 'admin' ? 'แดชบอร์ดผู้ดูแลระบบ' : role === 'instructor' || role === 'teacher' ? 'แดชบอร์ดผู้สอน' : 'แดชบอร์ดผู้เรียน'}
           </p>
         </div>
+
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -79,8 +79,8 @@ export default function AuthPage() {
       <div className="order-1 flex items-center justify-center px-4 py-10 sm:px-6 lg:px-10 lg:py-14">
         <div className="login-card w-full max-w-md rounded-2xl border border-border bg-white p-6 shadow-sm sm:p-8">
           <div className="mb-4 flex justify-center">
-            <div className="rounded-xl bg-primary-light p-3 text-primary-dark">
-              <BookOpen className="h-10 w-10" />
+            <div className="play-btn rounded-xl bg-primary-light p-3 text-primary-dark">
+              <BookOpen className="play-nudge h-10 w-10" />
             </div>
           </div>
 
@@ -150,20 +150,20 @@ export default function AuthPage() {
                   title={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
                   className="absolute right-1 top-1/2 -translate-y-1/2 rounded-lg p-2 text-secondary transition-colors hover:bg-surface hover:text-ink"
                 >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showPassword ? <EyeOff className="play-icon h-5 w-5" /> : <Eye className="play-icon h-5 w-5" />}
                 </button>
               </div>
             </Field>
 
-            <Button type="submit" variant="primary" loading={loading} className="w-full">
+            <Button type="submit" variant="primary" loading={loading} className="play-btn w-full">
               {isLogin ? (
                 <span className="flex items-center justify-center gap-2">
-                  <LogIn className="h-5 w-5" />
+                  <LogIn className="play-nudge h-5 w-5" />
                   <span>เข้าสู่ระบบ</span>
                 </span>
               ) : (
                 <span className="flex items-center justify-center gap-2">
-                  <UserPlus className="h-5 w-5" />
+                  <UserPlus className="play-nudge h-5 w-5" />
                   <span>ลงทะเบียน</span>
                 </span>
               )}

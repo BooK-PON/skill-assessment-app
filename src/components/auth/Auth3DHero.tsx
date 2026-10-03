@@ -45,11 +45,11 @@ export default function Auth3DHero() {
           {highlights.map((item, index) => (
             <li
               key={item.title}
-              className="reveal flex items-start gap-3 rounded-2xl border border-border bg-white/80 p-3.5 shadow-sm backdrop-blur sm:gap-4 sm:p-4"
+              className="reveal play-row flex items-start gap-3 rounded-2xl border border-border bg-white/80 p-3.5 shadow-sm backdrop-blur transition-colors duration-200 hover:border-primary/40 hover:bg-white sm:gap-4 sm:p-4"
               data-order={index + 4}
             >
               <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-light text-primary-dark ring-1 ring-primary/20">
-                <item.icon className="h-5 w-5" />
+                <item.icon className="play-icon h-5 w-5" />
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-ink">{item.title}</span>

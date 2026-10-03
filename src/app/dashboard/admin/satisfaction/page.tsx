@@ -6,6 +6,7 @@ import { SURVEY_DIMENSIONS } from '@/lib/survey'
 import { RefreshCw, Smile, BarChart3, FileDown, Table2, Layers } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
 import SatisfactionBarChart from '@/components/charts/SatisfactionBarChart'
+import { csvCell, downloadCsv } from '@/lib/csv'
 
 interface SurveyRow {
   dimension: string
@@ -67,10 +68,6 @@ function computeFrequency(rows: SurveyRow[]): FreqStat[] {
 function columnAvg(dims: DimStat[]): number {
   const withData = dims.filter((d) => d.count > 0)
   return withData.length ? withData.reduce((s, d) => s + d.avg, 0) / withData.length : 0
-}
-
-function csvCell(s: string): string {
-  return `"${s.replace(/"/g, '""')}"`
 }
 
 export default function AdminSatisfactionPage() {
@@ -141,15 +138,7 @@ export default function AdminSatisfactionPage() {
     freqOverall.forEach((f) => {
       lines.push([csvCell(f.label), ...f.counts.map(String), String(f.total), f.mean.toFixed(2)].join(','))
     })
-    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'satisfaction-summary.csv'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    downloadCsv('satisfaction-summary.csv', lines)
   }
 
   return (

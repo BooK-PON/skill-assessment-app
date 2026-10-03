@@ -2,22 +2,14 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { BarChart3, TrendingUp, Users, BookOpen } from 'lucide-react'
+import { BarChart3, Download } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
-
-interface ScoreRecord {
-  user_id: string
-  course_id: string
-  score: number
-  total_questions: number
-  assessment_type: string
-  profiles?: { fullname: string; email: string }
-  courses?: { title: string }
-}
+import { downloadCsv } from '@/lib/csv'
+import { computeGainReport, gainLevel, gainReportToCsv, GainReportRow, GainScoreRow } from '@/lib/gain'
 
 export default function AnalyticsReportPage() {
   const [loading, setLoading] = useState(true)
-  const [reportData, setReportData] = useState<any[]>([])
+  const [reportData, setReportData] = useState<GainReportRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const supabase = useMemo(() => createClient(), [])
 
@@ -32,48 +24,17 @@ export default function AnalyticsReportPage() {
       if (error) {
         setError(error.message)
       } else if (data) {
-        // จัดกลุ่มข้อมูลตาม User และ Course
-        const grouped: Record<string, any> = {}
-
-        data.forEach((item: ScoreRecord) => {
-          const key = `${item.user_id}_${item.course_id}`
-          if (!grouped[key]) {
-            grouped[key] = {
-              userName: item.profiles?.fullname || item.profiles?.email || 'ไม่ระบุชื่อ',
-              courseTitle: item.courses?.title || 'วิชาเรียน',
-              preTest: null,
-              postTest: null,
-              totalScore: item.total_questions || 1,
-            }
-          }
-
-          if (item.assessment_type === 'pretest') grouped[key].preTest = item.score
-          if (item.assessment_type === 'posttest') grouped[key].postTest = item.score
-        })
-
-        // คำนวณ Normalized Gain (g)
-        const processed = Object.values(grouped).map((row) => {
-          let g = null
-          if (row.preTest !== null && row.postTest !== null) {
-            const maxScore = row.totalScore
-            const gainNumerator = row.postTest - row.preTest
-            const gainDenominator = maxScore - row.preTest
-            if (gainDenominator <= 0) {
-              g = '1.00'
-            } else {
-              g = Math.max(0, Math.min(1, gainNumerator / gainDenominator)).toFixed(2)
-            }
-          }
-          return { ...row, gain: g }
-        })
-
-        setReportData(processed)
+        setReportData(computeGainReport(data as unknown as GainScoreRow[]))
       }
       setLoading(false)
     }
 
     fetchScores()
   }, [])
+
+  const exportCsv = () => {
+    downloadCsv('gain-report.csv', gainReportToCsv(reportData))
+  }
 
   if (loading) {
     return (
@@ -95,11 +56,22 @@ export default function AnalyticsReportPage() {
     <div className="p-6">
       <div className="max-w-7xl mx-auto space-y-6">
 
-        <div className="border-b border-border pb-4">
-          <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-purple-600" /> รายงานวิเคราะห์ผลสัมฤทธิ์ทางการเรียน (Analytics & Gain)
-          </h1>
-          <p className="text-secondary text-xs mt-1">เปรียบเทียบคะแนน Pre-test และ Post-test ด้วยดัชนีผลการเรียนรู้ที่เพิ่มขึ้นแบบบรรทัดฐาน (Normalized Gain: g)</p>
+        <div className="border-b border-border pb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
+              <BarChart3 className="w-6 h-6 text-purple-600" /> รายงานวิเคราะห์ผลสัมฤทธิ์ทางการเรียน (Analytics & Gain)
+            </h1>
+            <p className="text-secondary text-xs mt-1">เปรียบเทียบคะแนน Pre-test และ Post-test ด้วยดัชนีผลการเรียนรู้ที่เพิ่มขึ้นแบบบรรทัดฐาน (Normalized Gain: g)</p>
+          </div>
+          {reportData.length > 0 && (
+            <button
+              onClick={exportCsv}
+              className="inline-flex items-center gap-2 bg-white hover:bg-surface border border-border text-sm font-medium px-4 py-2 rounded-lg transition"
+            >
+              <Download className="w-4 h-4" />
+              ส่งออก CSV
+            </button>
+          )}
         </div>
 
         {error ? (
@@ -119,35 +91,43 @@ export default function AnalyticsReportPage() {
                 <tr>
                   <th className="p-4">ผู้เรียน</th>
                   <th className="p-4">รายวิชา</th>
-                  <th className="p-4 text-center">Pre-test (20)</th>
-                  <th className="p-4 text-center">Post-test (20)</th>
+                  <th className="p-4 text-center">Pre-test (ถูก/ทั้งหมด)</th>
+                  <th className="p-4 text-center">Post-test (ถูก/ทั้งหมด)</th>
+                  <th className="p-4 text-center">Pre (%)</th>
+                  <th className="p-4 text-center">Post (%)</th>
                   <th className="p-4 text-center">Normalized Gain ($g$)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {reportData.map((row, idx) => (
+                {reportData.map((row, idx) => {
+                  const level = gainLevel(row.gain)
+                  return (
                   <tr key={idx} className="hover:bg-surface transition">
                     <td className="p-4 font-medium text-ink">{row.userName}</td>
                     <td className="p-4 text-secondary">{row.courseTitle}</td>
-                    <td className="p-4 text-center text-blue-600 font-bold">{row.preTest ?? '-'}</td>
-                    <td className="p-4 text-center text-purple-600 font-bold">{row.postTest ?? '-'}</td>
+                    <td className="p-4 text-center text-secondary text-xs">{row.preRaw !== null ? `${row.preRaw}/${row.preTotal}` : '-'}</td>
+                    <td className="p-4 text-center text-secondary text-xs">{row.postRaw !== null ? `${row.postRaw}/${row.postTotal}` : '-'}</td>
+                    <td className="p-4 text-center text-blue-600 font-bold">{row.prePct !== null ? `${row.prePct}%` : '-'}</td>
+                    <td className="p-4 text-center text-purple-600 font-bold">{row.postPct !== null ? `${row.postPct}%` : '-'}</td>
                     <td className="p-4 text-center">
                       {row.gain !== null ? (
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold border ${
-                          Number(row.gain) >= 0.7
+                          level === 'high'
                             ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                            : Number(row.gain) >= 0.3
+                            : level === 'mid'
                             ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
                             : 'bg-rose-500/10 text-rose-600 border-rose-500/20'
                         }`}>
-                            g = {row.gain} ({Number(row.gain) >= 0.7 ? 'เรียนรู้สูง' : Number(row.gain) >= 0.3 ? 'เรียนรู้ปานกลาง' : 'เรียนรู้น้อย'})
+                            g = {row.gain} ({level === 'high' ? 'เรียนรู้สูง' : level === 'mid' ? 'เรียนรู้ปานกลาง' : 'เรียนรู้น้อย'})
+                            {row.decreased && ' · คะแนนลดลง'}
                         </span>
                       ) : (
                         <span className="text-secondary text-xs">ยังทำไม่ครบทั้ง 2 ชุด</span>
                       )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { SURVEY_DIMENSIONS } from '@/lib/survey'
-import { RefreshCw, Smile, BarChart3 } from 'lucide-react'
+import { RefreshCw, Smile, BarChart3, FileDown, Table2, Layers } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
 import SatisfactionBarChart from '@/components/charts/SatisfactionBarChart'
 
@@ -29,6 +29,7 @@ interface DimStat {
 
 interface CourseStat {
   courseTitle: string
+  n: number
   dims: DimStat[]
 }
 
@@ -40,6 +41,36 @@ function computeStats(rows: SurveyRow[]) {
       : 0
     return { key: d.key, label: d.label, avg, count: withDim.length }
   })
+}
+
+interface FreqStat {
+  key: string
+  label: string
+  counts: number[] // index 0..4 = คะแนน 1..5
+  total: number
+  mean: number
+}
+
+function computeFrequency(rows: SurveyRow[]): FreqStat[] {
+  return SURVEY_DIMENSIONS.map((d) => {
+    const scores = rows.filter((r) => r.dimension === d.key).map((r) => r.score)
+    const counts = [0, 0, 0, 0, 0]
+    scores.forEach((s) => {
+      if (s >= 1 && s <= 5) counts[s - 1] += 1
+    })
+    const total = scores.length
+    const mean = total ? scores.reduce((a, b) => a + b, 0) / total : 0
+    return { key: d.key, label: d.label, counts, total, mean }
+  })
+}
+
+function columnAvg(dims: DimStat[]): number {
+  const withData = dims.filter((d) => d.count > 0)
+  return withData.length ? withData.reduce((s, d) => s + d.avg, 0) / withData.length : 0
+}
+
+function csvCell(s: string): string {
+  return `"${s.replace(/"/g, '""')}"`
 }
 
 export default function AdminSatisfactionPage() {
@@ -79,13 +110,47 @@ export default function AdminSatisfactionPage() {
     courseMap.set(key, list)
   })
   const perCourse: CourseStat[] = Array.from(courseMap.entries())
-    .map(([title, list]) => ({ courseTitle: title, dims: computeStats(list) }))
-    .sort((a, b) => b.dims.length - a.dims.length)
+    .map(([title, list]) => ({
+      courseTitle: title,
+      n: new Set(list.map((r) => r.user_id)).size,
+      dims: computeStats(list),
+    }))
+    .sort((a, b) => b.n - a.n)
 
   const responseCount = new Set(rows.map((r) => `${r.user_id}-${r.course_id}`)).size
   const overallAvg = overall.length
     ? overall.reduce((s, d) => s + d.avg, 0) / overall.length
     : 0
+  const freqOverall = computeFrequency(rows)
+
+  const exportCsv = () => {
+    const lines: string[] = []
+    const colHeaders = [...perCourse.map((c) => c.courseTitle), 'ภาพรวม']
+    lines.push(['ด้าน', ...colHeaders.map(csvCell)].join(','))
+    overall.forEach((d, i) => {
+      const row = [csvCell(d.label)]
+      perCourse.forEach((c) => {
+        const cd = c.dims[i]
+        row.push(cd.count > 0 ? `${cd.avg.toFixed(2)} (${cd.count})` : '-')
+      })
+      row.push(d.count > 0 ? `${d.avg.toFixed(2)} (${d.count})` : '-')
+      lines.push(row.join(','))
+    })
+    lines.push('')
+    lines.push(['ด้าน', '1', '2', '3', '4', '5', 'รวม', 'ค่าเฉลี่ย'].join(','))
+    freqOverall.forEach((f) => {
+      lines.push([csvCell(f.label), ...f.counts.map(String), String(f.total), f.mean.toFixed(2)].join(','))
+    })
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'satisfaction-summary.csv'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="p-6">
@@ -183,7 +248,10 @@ export default function AdminSatisfactionPage() {
                   return (
                     <div key={c.courseTitle} className="bg-white border border-border rounded-xl p-5 shadow-sm">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-ink text-sm">{c.courseTitle}</h3>
+                        <div>
+                          <h3 className="font-semibold text-ink text-sm">{c.courseTitle}</h3>
+                          <p className="text-[11px] text-muted mt-0.5">ผู้ตอบ {c.n} คน</p>
+                        </div>
                         <span className="text-xs bg-amber-500/15 text-amber-600 px-2.5 py-1 rounded-full font-bold">
                           {courseAvg.toFixed(2)}/5
                         </span>
@@ -207,6 +275,113 @@ export default function AdminSatisfactionPage() {
                     </div>
                   )
                 })}
+              </div>
+            </div>
+
+            {/* ตารางสรุปผลสำหรับเอกสาร */}
+            <div className="bg-white border border-border rounded-xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-amber-600" />
+                  <h2 className="font-bold text-ink">ตารางสรุปผล (รายด้าน × รายวิชา)</h2>
+                </div>
+                <button
+                  onClick={exportCsv}
+                  className="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-ink text-sm font-medium px-4 py-2 rounded-lg transition"
+                >
+                  <FileDown className="w-4 h-4" /> Export CSV
+                </button>
+              </div>
+              <p className="text-xs text-secondary mb-4">เซลล์แสดงค่าเฉลี่ย (x̄) และจำนวนผู้ตอบ (N) · คะแนนเต็ม 5</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-surface text-left text-xs text-secondary">
+                      <th className="px-3 py-2 font-semibold border border-border whitespace-nowrap">ด้านการประเมิน</th>
+                      {perCourse.map((c) => (
+                        <th key={c.courseTitle} className="px-3 py-2 font-semibold border border-border min-w-[110px]">
+                          <div>{c.courseTitle}</div>
+                          <div className="font-normal text-muted">N = {c.n}</div>
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 font-semibold border border-border min-w-[100px]">
+                        <div>ภาพรวม</div>
+                        <div className="font-normal text-muted">N = {responseCount}</div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overall.map((d, i) => (
+                      <tr key={d.key} className="hover:bg-surface/60">
+                        <td className="px-3 py-2 border border-border text-ink font-medium">{d.label}</td>
+                        {perCourse.map((c) => {
+                          const cd = c.dims[i]
+                          return (
+                            <td key={c.courseTitle} className="px-3 py-2 border border-border text-center">
+                              <div className="font-bold text-ink">{cd.count > 0 ? cd.avg.toFixed(2) : '-'}</div>
+                              <div className="text-[10px] text-muted">(N = {cd.count})</div>
+                            </td>
+                          )
+                        })}
+                        <td className="px-3 py-2 border border-border text-center bg-amber-500/5">
+                          <div className="font-bold text-amber-700">{d.count > 0 ? d.avg.toFixed(2) : '-'}</div>
+                          <div className="text-[10px] text-muted">(N = {d.count})</div>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-surface">
+                      <td className="px-3 py-2 border border-border font-bold text-ink">เฉลี่ยรวม</td>
+                      {perCourse.map((c) => (
+                        <td key={c.courseTitle} className="px-3 py-2 border border-border text-center font-bold text-ink">
+                          {columnAvg(c.dims).toFixed(2)}
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 border border-border text-center font-bold text-amber-700">
+                        {overallAvg.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ตารางความถี่คะแนน (1-5) */}
+            <div className="bg-white border border-border rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Table2 className="w-5 h-5 text-amber-600" />
+                <h2 className="font-bold text-ink">ตารางการแจกแจงความถี่คะแนน (ภาพรวม)</h2>
+              </div>
+              <p className="text-xs text-secondary mb-4">จำนวนผู้ตอบจำแนกตามคะแนน 1–5 (เปอร์เซ็นต์ของด้าน) ต่อด้านการประเมิน</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-surface text-left text-xs text-secondary">
+                      <th className="px-3 py-2 font-semibold border border-border">ด้านการประเมิน</th>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <th key={s} className="px-3 py-2 font-semibold border border-border min-w-[80px] text-center">คะแนน {s}</th>
+                      ))}
+                      <th className="px-3 py-2 font-semibold border border-border text-center">รวม (N)</th>
+                      <th className="px-3 py-2 font-semibold border border-border text-center">ค่าเฉลี่ย (x̄)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {freqOverall.map((f) => (
+                      <tr key={f.key} className="hover:bg-surface/60">
+                        <td className="px-3 py-2 border border-border text-ink font-medium">{f.label}</td>
+                        {f.counts.map((cnt, i) => (
+                          <td key={i} className="px-3 py-2 border border-border text-center">
+                            <div className="font-bold text-ink">{cnt}</div>
+                            <div className="text-[10px] text-muted">{f.total ? ((cnt / f.total) * 100).toFixed(1) : '0.0'}%</div>
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 border border-border text-center font-bold text-ink">{f.total}</td>
+                        <td className="px-3 py-2 border border-border text-center font-bold text-amber-700">
+                          {f.total ? f.mean.toFixed(2) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>

@@ -50,17 +50,21 @@ export default function StudentAssessmentPage() {
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [score, setScore] = useState(0)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchAndRandomizeQuestions() {
       setLoading(true)
+      setError(null)
       // ดึงข้อสอบทั้งหมดในรายวิชา
-      const { data: qData } = await supabase
+      const { data: qData, error: qError } = await supabase
         .from('questions')
         .select('*')
         .eq('course_id', courseId)
 
-      if (qData && qData.length > 0) {
+      if (qError) {
+        setError(qError.message)
+      } else if (qData && qData.length > 0) {
         const formatted = qData.map((q) => ({
           ...q,
           options: typeof q.options === 'string' ? safeParseOptions(q.options) : q.options,
@@ -164,6 +168,20 @@ export default function StudentAssessmentPage() {
             <Skeleton className="h-12 w-32 rounded-xl" />
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center space-y-4">
+        <ShieldAlert className="w-12 h-12 text-rose-600" />
+        <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm max-w-md text-center">
+          เกิดข้อผิดพลาดในการโหลดข้อสอบ: {error}
+        </div>
+        <button onClick={() => router.back()} className="text-sm bg-white border border-border px-4 py-2 rounded-lg text-ink">
+          ย้อนกลับ
+        </button>
       </div>
     )
   }

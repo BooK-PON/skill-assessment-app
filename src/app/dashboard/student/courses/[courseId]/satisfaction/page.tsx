@@ -24,13 +24,19 @@ export default function StudentSatisfactionPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
+      setError(null)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) {
+        setError('ไม่สามารถตรวจสอบผู้ใช้งาน: ' + userError.message)
+        setLoading(false)
+        return
+      }
       if (!user) {
         setLoading(false)
         return
       }
 
-      const [{ data: course }, { data: rows }] = await Promise.all([
+      const [{ data: course, error: courseError }, { data: rows, error: rowsError }] = await Promise.all([
         supabase.from('courses').select('title').eq('id', courseId).maybeSingle(),
         supabase
           .from('satisfaction_surveys')
@@ -39,8 +45,14 @@ export default function StudentSatisfactionPage() {
           .eq('course_id', courseId),
       ])
 
-      if (course) setCourseTitle(course.title)
-      if (rows && rows.length > 0) {
+      if (courseError) {
+        setError('ไม่สามารถโหลดรายวิชา: ' + courseError.message)
+      } else if (course) {
+        setCourseTitle(course.title)
+      }
+      if (rowsError) {
+        setError('ไม่สามารถโหลดผลแบบประเมินเดิม: ' + rowsError.message)
+      } else if (rows && rows.length > 0) {
         const map: Record<string, number> = {}
         rows.forEach((r) => {
           map[r.dimension] = r.score

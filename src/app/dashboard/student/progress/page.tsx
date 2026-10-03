@@ -2,18 +2,12 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { SKILL_DIMENSIONS, SKILL_DIMENSION_LABELS } from '@/lib/survey'
+import { SKILL_DIMENSION_LABELS, computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
 import { TrendingUp, RefreshCw, Compass, BookOpen, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import Skeleton from '@/components/ui/Skeleton'
 import SkillRadarChart from '@/components/charts/SkillRadarChart'
 import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
-
-interface AttemptRow {
-  assessment_type: string
-  skill_dimension: string
-  is_correct: boolean
-}
 
 interface CourseRow {
   course_id: string
@@ -26,15 +20,6 @@ function courseTitleOf(c: CourseRow['courses']): string {
   return Array.isArray(c) ? c[0]?.title || '' : c.title
 }
 
-interface DimData {
-  key: string
-  label: string
-  pre: number | null
-  post: number | null
-  preCount: number
-  postCount: number
-}
-
 interface Recommendation {
   course_id: string
   title: string
@@ -42,49 +27,46 @@ interface Recommendation {
   total: number
 }
 
-function pctGroup(rows: AttemptRow[], type: 'pretest' | 'posttest'): Record<string, { pct: number; count: number }> {
-  const dims: Record<string, { correct: number; total: number }> = {}
-  rows
-    .filter((r) => r.assessment_type === type)
-    .forEach((r) => {
-      const d = dims[r.skill_dimension] || { correct: 0, total: 0 }
-      d.total += 1
-      if (r.is_correct) d.correct += 1
-      dims[r.skill_dimension] = d
-    })
-  const out: Record<string, { pct: number; count: number }> = {}
-  Object.entries(dims).forEach(([k, v]) => {
-    out[k] = { pct: v.total > 0 ? Math.round((v.correct / v.total) * 100) : 0, count: v.total }
-  })
-  return out
-}
-
 export default function StudentProgressPage() {
   const supabase = useMemo(() => createClient(), [])
   const [courses, setCourses] = useState<CourseRow[]>([])
   const [selected, setSelected] = useState<string | null>(null)
-  const [dims, setDims] = useState<DimData[]>([])
+  const [courseParam, setCourseParam] = useState<string | null>(null)
+  const [dims, setDims] = useState<SkillDim[]>([])
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])
   const [hasPosttest, setHasPosttest] = useState(false)
   const [loading, setLoading] = useState(true)
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const loadRecommendations = useCallback(async (weakKey: string | null) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { data: allQuestions } = await supabase
+    const { data: allQuestions, error: qsError } = await supabase
       .from('questions')
       .select('course_id, skill_dimension')
+    if (qsError) {
+      setError('เกิดข้อผิดพลาดในการโหลดคลังข้อสอบ: ' + qsError.message)
+      return
+    }
 
-    const { data: allCourses } = await supabase.from('courses').select('id, title, status')
+    const { data: allCourses, error: cError } = await supabase.from('courses').select('id, title, status')
+    if (cError) {
+      setError('เกิดข้อผิดพลาดในการโหลดรายวิชา: ' + cError.message)
+      return
+    }
 
     if (!allQuestions || !allCourses) return
 
-    const { data: enrollments } = await supabase
+    const { data: enrollments, error: eError } = await supabase
       .from('enrollments')
       .select('course_id')
       .eq('user_id', user.id)
+    if (eError) {
+      setError('เกิดข้อผิดพลาดในการโหลดการลงทะเบียน: ' + eError.message)
+      return
+    }
     const enrolledSet = new Set((enrollments || []).map((e) => e.course_id))
 
     const byCourse = new Map<string, { total: number; weak: number }>()
@@ -113,53 +95,58 @@ export default function StudentProgressPage() {
   }, [])
 
   const fetchAll = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) {
+      setError('เกิดข้อผิดพลาดในการตรวจสอบผู้ใช้: ' + userError.message)
+      setLoading(false)
+      return
+    }
     if (!user) {
       setLoading(false)
       return
     }
 
-    const { data: enrollments } = await supabase
+    const { data: enrollments, error: enrollError } = await supabase
       .from('enrollments')
       .select('course_id, status, enrolled_at, courses (title)')
       .eq('user_id', user.id)
       .order('enrolled_at', { ascending: false })
 
+    if (enrollError) {
+      setError('เกิดข้อผิดพลาดในการโหลดการลงทะเบียน: ' + enrollError.message)
+    }
     const list = (enrollments || []) as CourseRow[]
     setCourses(list)
-    const target = selected || list[0]?.course_id || null
+    const target = selected || courseParam || list[0]?.course_id || null
     setSelected(target)
 
     let weakKey: string | null = null
 
     if (target) {
-      const { data: attempts } = await supabase
+      const { data: attempts, error: attemptsError } = await supabase
         .from('assessment_attempts')
         .select('assessment_type, skill_dimension, is_correct')
         .eq('user_id', user.id)
         .eq('course_id', target)
+      if (attemptsError) {
+        setError('เกิดข้อผิดพลาดในการโหลดผลการทดสอบ: ' + attemptsError.message)
+      }
 
-      const rows = (attempts || []) as AttemptRow[]
-      const pre = pctGroup(rows, 'pretest')
-      const post = pctGroup(rows, 'posttest')
+      const rows = (attempts || []) as SkillAttemptRow[]
 
-      const { data: postScore } = await supabase
+      const { data: postScore, error: postError } = await supabase
         .from('assessment_scores')
         .select('id')
         .eq('user_id', user.id)
         .eq('course_id', target)
         .eq('assessment_type', 'posttest')
         .limit(1)
+      if (postError) {
+        setError('เกิดข้อผิดพลาดในการโหลดผล Post-test: ' + postError.message)
+      }
       setHasPosttest(postScore !== null && postScore.length > 0)
 
-      const chart = SKILL_DIMENSIONS.map((d) => ({
-        key: d.key,
-        label: d.label,
-        pre: pre[d.key] !== undefined ? pre[d.key].pct : null,
-        post: post[d.key] !== undefined ? post[d.key].pct : null,
-        preCount: pre[d.key]?.count ?? 0,
-        postCount: post[d.key]?.count ?? 0,
-      }))
+      const chart = computeSkillDims(rows)
       setDims(chart)
 
       const smallest = chart
@@ -178,7 +165,17 @@ export default function StudentProgressPage() {
     setUpdatedAt(new Date().toLocaleString('th-TH'))
     await loadRecommendations(weakKey)
     setLoading(false)
-  }, [selected])
+  }, [selected, courseParam])
+
+  useEffect(() => {
+    // อ่าน ?course= จาก URL ครั้งเดียว (เลี่ยงใช้SearchParams กัน prerender error)
+    const t = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        setCourseParam(new URLSearchParams(window.location.search).get('course'))
+      }
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
 
   useEffect(() => {
     const t = setTimeout(() => { void fetchAll() }, 0)
@@ -217,6 +214,12 @@ export default function StudentProgressPage() {
             รีเฟรช
           </button>
         </div>
+
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
 
         {loading ? (
           <div className="py-8 space-y-6">

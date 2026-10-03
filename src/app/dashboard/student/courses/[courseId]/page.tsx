@@ -4,8 +4,11 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
-import { BookOpen, CheckCircle, Play, FileText, Lock, Award, ArrowLeft, UserPlus } from 'lucide-react'
+import { BookOpen, CheckCircle, Play, FileText, Lock, Award, ArrowLeft, UserPlus, BarChart3 } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
+import { SKILL_DIMENSION_LABELS, computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
+import SkillRadarChart from '@/components/charts/SkillRadarChart'
+import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
 
 interface Lesson {
   id: string
@@ -29,54 +32,71 @@ export default function StudentCourseDetailPage() {
   const [enrollmentStatus, setEnrollmentStatus] = useState<string | null>(null)
   const [enrolling, setEnrolling] = useState(false)
   const [activeCount, setActiveCount] = useState(0)
+  const [skillDims, setSkillDims] = useState<SkillDim[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchCourseData() {
       setLoading(true)
+      setError(null)
+      let fetchErrorMessage: string | null = null
+      const mergeError = (msg: string) => {
+        if (msg) fetchErrorMessage = fetchErrorMessage ? `${fetchErrorMessage} / ${msg}` : msg
+      }
       const { data: { user } } = await supabase.auth.getUser()
 
       // 1. ดึงข้อมูลวิชา
-      const { data: course } = await supabase
+      const { data: course, error: courseError } = await supabase
         .from('courses')
         .select('title, active_count')
         .eq('id', courseId)
         .single()
-      if (course) {
+      if (courseError) {
+        fetchErrorMessage = courseError.message
+      } else if (course) {
         setCourseTitle(course.title)
         setActiveCount(course.active_count ?? 0)
       }
 
       // 2. ดึงรายการบทเรียน
-      const { data: lessonData } = await supabase
+      const { data: lessonData, error: lessonError } = await supabase
         .from('lessons')
         .select('id, title, order_index')
         .eq('course_id', courseId)
         .order('order_index', { ascending: true })
 
-      if (lessonData) setLessons(lessonData)
+      if (lessonError) {
+        mergeError(lessonError.message)
+      } else if (lessonData) {
+        setLessons(lessonData)
+      }
 
       // 3. เช็กสถานะการลงทะเบียนเรียน
       if (user) {
-        const { data: enrollment } = await supabase
+        const { data: enrollment, error: enrollError } = await supabase
           .from('enrollments')
           .select('status')
           .eq('user_id', user.id)
           .eq('course_id', courseId)
           .single()
 
-        if (enrollment) setEnrollmentStatus(enrollment.status)
-      }
+        if (enrollError) {
+          mergeError(enrollError.message)
+        } else if (enrollment) {
+          setEnrollmentStatus(enrollment.status)
+        }
 
-      // 4. เช็กประวัติการทำแบบทดสอบของผู้เรียน
-      if (user) {
-        const { data: scores } = await supabase
+        // 4. เช็กประวัติการทำแบบทดสอบของผู้เรียน
+        const { data: scores, error: scoresError } = await supabase
           .from('assessment_scores')
           .select('assessment_type, lesson_id')
           .eq('user_id', user.id)
           .eq('course_id', courseId)
 
-        if (scores) {
+        if (scoresError) {
+          mergeError(scoresError.message)
+        } else if (scores) {
           setHasPreTest(scores.some((s) => s.assessment_type === 'pretest'))
           setHasPostTest(scores.some((s) => s.assessment_type === 'posttest'))
           
@@ -89,15 +109,32 @@ export default function StudentCourseDetailPage() {
         }
 
         // 5. เช็คว่าเคยตอบแบบประเมินความพึงพอใจแล้วหรือยัง
-        const { data: surveyRow } = await supabase
+        const { data: surveyRow, error: surveyError } = await supabase
           .from('satisfaction_surveys')
           .select('id')
           .eq('user_id', user.id)
           .eq('course_id', courseId)
           .limit(1)
-        setHasSurvey(surveyRow !== null && surveyRow.length > 0)
+        if (surveyError) {
+          mergeError(surveyError.message)
+        } else {
+          setHasSurvey(surveyRow !== null && surveyRow.length > 0)
+        }
+
+        // 6. ดึงผลการตอบรายข้อ เพื่อคำนวณทักษะ 5 ด้านของรายวิชานี้ (ประเมินเฉพาะคอร์สนี้ ไม่รวมทุกคอร์ส)
+        const { data: attempts, error: attemptsError } = await supabase
+          .from('assessment_attempts')
+          .select('assessment_type, skill_dimension, is_correct')
+          .eq('user_id', user.id)
+          .eq('course_id', courseId)
+        if (attemptsError) {
+          mergeError(attemptsError.message)
+        } else if (attempts && attempts.length > 0) {
+          setSkillDims(computeSkillDims(attempts as SkillAttemptRow[]))
+        }
       }
 
+      if (fetchErrorMessage) setError(fetchErrorMessage)
       setLoading(false)
     }
 
@@ -162,6 +199,13 @@ export default function StudentCourseDetailPage() {
       toast('เกิดข้อผิดพลาดในการลงทะเบียน: ' + error.message, 'error')
     } else {
       setEnrollmentStatus('active')
+      // อัปเดตจำนวนผู้เรียนทันที (trigger refresh_course_active_count จะเพิ่มยอดให้)
+      const { data: updatedCourse } = await supabase
+        .from('courses')
+        .select('active_count')
+        .eq('id', courseId)
+        .single()
+      if (updatedCourse) setActiveCount(updatedCourse.active_count ?? 0)
     }
     setEnrolling(false)
   }
@@ -189,6 +233,11 @@ export default function StudentCourseDetailPage() {
     return (
       <div className="p-6">
         <div className="max-w-2xl mx-auto mt-16 bg-white border border-border rounded-2xl p-10 text-center space-y-6">
+          {error && (
+            <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm text-left">
+              เกิดข้อผิดพลาดในการโหลดข้อมูล: {error}
+            </div>
+          )}
           <div className="p-4 bg-blue-500/10 text-blue-600 rounded-2xl w-fit mx-auto">
             <BookOpen className="w-10 h-10" />
           </div>
@@ -235,6 +284,12 @@ export default function StudentCourseDetailPage() {
           <h1 className="text-2xl font-bold text-ink">{courseTitle}</h1>
           <p className="text-secondary text-xs mt-1">ทำแบบทดสอบก่อนเรียน เข้าศึกษาบทเรียน และทำแบบทดสอบหลังเรียน</p>
         </div>
+
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดข้อมูล: {error}
+          </div>
+        )}
 
         {/* STEP 1: Pre-test */}
         <div className={`p-5 rounded-2xl border transition ${
@@ -346,6 +401,52 @@ export default function StudentCourseDetailPage() {
             >
               <Award className="w-4 h-4" /> ทำแบบประเมินความพึงพอใจ (5 ข้อ)
             </button>
+          )}
+        </div>
+
+        {/* STEP 4: ทักษะ 5 ด้านของรายวิชานี้ (ประเมินรายคอร์ส) */}
+        <div className="bg-white border border-border rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <BarChart3 className="w-5 h-5 text-emerald-600" />
+            <h3 className="font-bold text-ink text-sm">4. ทักษะ 5 ด้านของรายวิชานี้ (Pre-test vs Post-test)</h3>
+          </div>
+          <p className="text-xs text-secondary mb-5">
+            การประเมินความสามารถอ้างอิงจากผลการทดสอบในรายวิชานี้เท่านั้น ไม่นำคะแนนจากวิชาอื่นมารวม · สีม่วง = ก่อนเรียน (Pre-test) · สีเขียว = หลังเรียน (Post-test)
+          </p>
+
+          {!hasPreTest && !hasPostTest ? (
+            <p className="text-sm text-secondary text-center py-8">
+              ยังไม่มีผลการทดสอบในรายวิชานี้ เริ่มจากทำแบบทดสอบก่อนเรียน (Pre-test) เพื่อดูกราฟทักษะ 5 ด้านของคุณ
+            </p>
+          ) : (
+            <>
+              <div className="grid lg:grid-cols-2 gap-6">
+                <div className="bg-surface border border-border rounded-xl p-4">
+                  <p className="text-xs font-bold text-ink mb-3">กราฟเรดาร์ (Radar Chart)</p>
+                  <SkillRadarChart data={skillDims} />
+                </div>
+                <div className="bg-surface border border-border rounded-xl p-4">
+                  <p className="text-xs font-bold text-ink mb-3">กราฟแท่งเปรียบเทียบ (Bar Chart)</p>
+                  <ComparisonBarChart data={skillDims} />
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
+                {skillDims.map((d) => (
+                  <div key={d.key} className="bg-surface border border-border rounded-xl p-3">
+                    <p className="text-[11px] text-ink font-medium mb-1">{d.label}</p>
+                    <p className="text-[10px] text-secondary mb-2">
+                      {SKILL_DIMENSION_LABELS[d.key]}
+                      <span className="text-muted"> · {d.preCount + d.postCount} ข้อ</span>
+                    </p>
+                    <div className="flex gap-3 text-[10px]">
+                      <span className="text-purple-600 font-bold">Pre {d.pre !== null ? `${d.pre}%` : '-'}</span>
+                      <span className="text-emerald-600 font-bold">Post {d.post !== null ? `${d.post}%` : '-'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 

@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
-import { ArrowLeft, BookOpen, CheckCircle2, HelpCircle, PlayCircle, FileText, ArrowRight } from 'lucide-react'
+import { ArrowLeft, BookOpen, CheckCircle2, HelpCircle, PlayCircle, FileText, ArrowRight, Lock } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
 
 interface Lesson {
@@ -43,6 +43,24 @@ function toYouTubeEmbedUrl(url: string): string | null {
   }
 }
 
+function getYouTubeVideoId(url: string): string | null {
+  const embed = toYouTubeEmbedUrl(url)
+  return embed ? embed.split('/embed/')[1]?.split('?')[0] || null : null
+}
+
+declare global {
+  interface Window {
+    YT?: {
+      PlayerState: { ENDED: number }
+      Player: new (
+        element: HTMLElement,
+        options: { videoId: string; events?: Record<string, (event: { data: number }) => void> }
+      ) => { destroy: () => void }
+    }
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
 export default function StudentLessonPage() {
   const params = useParams()
   const courseId = params.courseId as string
@@ -54,6 +72,7 @@ export default function StudentLessonPage() {
   const [lesson, setLesson] = useState<Lesson | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // State สำหรับการสลับโหมด (content = เรียนเนื้อหา, quiz = ทำข้อสอบ, result = ผลคะแนน)
   const [mode, setMode] = useState<'content' | 'quiz' | 'result'>('content')
@@ -62,29 +81,159 @@ export default function StudentLessonPage() {
   const [submitting, setSubmitting] = useState(false)
   const [nextLessonId, setNextLessonId] = useState<string | null>(null)
 
+  // สถานะการดูวิดีโอจบ (บันทึกใน localStorage เพื่อคงค่าเมื่อรีเฟรชหน้า)
+  const [videoFinished, setVideoFinished] = useState(false)
+  const playerContainerRef = useRef<HTMLDivElement | null>(null)
+  const ytPlayerRef = useRef<{ destroy: () => void } | null>(null)
+
+  const markVideoFinished = useCallback(() => {
+    setVideoFinished(true)
+    try {
+      window.localStorage.setItem(`video-finished-${lessonId}`, 'true')
+    } catch {
+      // localStorage ไม่พร้อมใช้งาน (เช่น โหมดส่วนตัว) ข้ามไปได้
+    }
+  }, [lessonId])
+
+  // ตรวจสอบสถานะการดูวิดีโอจบจาก localStorage ครั้งแรกที่เปิดหน้า
+  useEffect(() => {
+    if (!lessonId) return
+    const timer = setTimeout(() => {
+      try {
+        if (window.localStorage.getItem(`video-finished-${lessonId}`) === 'true') {
+          setVideoFinished(true)
+        }
+      } catch {
+        // ละเว้นความผิดพลาดจาก localStorage
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [lessonId])
+
+  // สร้าง YouTube Player (IFrame API) เมื่อบทเรียนมีวิดีโอ YouTube และโหมด content
+  useEffect(() => {
+    if (!lesson || mode !== 'content') return
+
+    const url = lesson.video_url || ''
+    const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
+    const videoId = isYouTube ? getYouTubeVideoId(url) : null
+    const container = playerContainerRef.current
+    if (!isYouTube || !videoId || !container) return
+
+    let disposed = false
+
+    const createPlayer = () => {
+      if (disposed || ytPlayerRef.current || !window.YT?.Player) return
+      // สร้าง player ใหม่ลงใน container (ครั้งแรกที่โหลด API
+      ytPlayerRef.current = new window.YT.Player(container, {
+        videoId,
+        events: {
+          onStateChange: (event) => {
+            if (event.data === window.YT?.PlayerState.ENDED) {
+              markVideoFinished()
+            }
+          },
+        },
+      })
+    }
+
+    const loadApi = () => {
+      if (window.YT?.Player) {
+        createPlayer()
+        return
+      }
+      // โหลดสคริปต์ IFrame API เพียงครั้งเดียว จากนั้นรอ onYouTubeIframeAPIReady
+      if (!document.getElementById('youtube-iframe-api')) {
+        const tag = document.createElement('script')
+        tag.id = 'youtube-iframe-api'
+        tag.src = 'https://www.youtube.com/iframe_api'
+        document.head.appendChild(tag)
+      }
+      window.onYouTubeIframeAPIReady = () => {
+        if (window.YT?.Player && !disposed && mode === 'content') {
+          createPlayer()
+        }
+      }
+    }
+
+    loadApi()
+
+    return () => {
+      disposed = true
+      ytPlayerRef.current?.destroy()
+      ytPlayerRef.current = null
+    }
+  }, [lesson, mode, markVideoFinished])
+
+  // บันทึกผล "เรียนจบ" สำหรับบทเรียนที่ไม่มีแบบทดสอบ (total_questions = 0)
+  // เพื่อให้บทเรียนนี้ถูกนับรวมใน completedLessons ของหน้ารายวิชา (แก้ P1-1)
+  useEffect(() => {
+    if (loading || !videoFinished || questions.length > 0 || !lesson) return
+    if (mode !== 'content') return
+
+    let cancelled = false
+    ;(async () => {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user || cancelled) return
+
+      // ลบผลเดิมของบทนี้ก่อน (กันซ้ำ) แล้ว insert ผลใหม่แบบ 0 ข้อ
+      await supabase
+        .from('assessment_scores')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('course_id', courseId)
+        .eq('lesson_id', lessonId)
+        .eq('assessment_type', 'lesson_quiz')
+
+      const { error } = await supabase.from('assessment_scores').insert([
+        {
+          user_id: user.id,
+          course_id: courseId,
+          lesson_id: lessonId,
+          score: 0,
+          total_questions: 0,
+          percentage: 0,
+          assessment_type: 'lesson_quiz',
+        },
+      ])
+      if (error) {
+        // ละเว้น: บทนี้ยังดูได้ แต่ไม่นับเป็นเรียนจบ
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loading, videoFinished, questions.length, lesson, mode, supabase, courseId, lessonId])
+
   useEffect(() => {
     async function fetchLessonData() {
       setLoading(true)
+      setError(null)
       
       // 1. ดึงข้อมูลบทเรียน (ตรวจสอบ course_id ด้วยเพื่อกันเข้าบทเรียนคอร์สอื่น)
-      const { data: lessonData } = await supabase
+      const { data: lessonData, error: lessonError } = await supabase
         .from('lessons')
         .select('*')
         .eq('id', lessonId)
         .eq('course_id', courseId)
         .single()
 
-      if (lessonData) {
+      if (lessonError) {
+        setError(lessonError.message)
+      } else if (lessonData) {
         setLesson(lessonData)
 
         // หาบทเรียนถัดไป: ใช้ชุดบทเรียนที่เรียงแล้ว หา index ปัจจุบันแล้ว +1 (รองรับ order_index ที่ไม่ต่อเนื่อง)
-        const { data: courseLessons } = await supabase
+        const { data: courseLessons, error: courseLessonsError } = await supabase
           .from('lessons')
           .select('id, order_index')
           .eq('course_id', courseId)
           .order('order_index', { ascending: true })
 
-        if (courseLessons) {
+        if (courseLessonsError) {
+          setError(courseLessonsError.message)
+        } else if (courseLessons) {
           const currentIdx = courseLessons.findIndex(l => l.id === lessonId)
           if (currentIdx !== -1 && currentIdx < courseLessons.length - 1) {
             setNextLessonId(courseLessons[currentIdx + 1].id)
@@ -93,13 +242,15 @@ export default function StudentLessonPage() {
       }
 
       // 2. ดึงข้อสอบประจำบทเรียนนี้ (ผูกกับ lesson_id)
-      const { data: qData } = await supabase
+      const { data: qData, error: qError } = await supabase
         .from('questions')
         .select('*')
         .eq('lesson_id', lessonId)
         .order('created_at', { ascending: true })
 
-      if (qData) {
+      if (qError) {
+        setError(qError.message)
+      } else if (qData) {
         setQuestions(
           qData.map((q) => {
             let parsedOptions: string[] = []
@@ -212,7 +363,13 @@ export default function StudentLessonPage() {
   if (!lesson) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center">
-        <p className="text-rose-600">ไม่พบข้อมูลบทเรียนนี้</p>
+        {error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm max-w-md text-center">
+            เกิดข้อผิดพลาดในการโหลดบทเรียน: {error}
+          </div>
+        ) : (
+          <p className="text-rose-600">ไม่พบข้อมูลบทเรียนนี้</p>
+        )}
       </div>
     )
   }
@@ -234,6 +391,12 @@ export default function StudentLessonPage() {
           </span>
         </div>
 
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
+            เกิดข้อผิดพลาดในการโหลดข้อมูล: {error}
+          </div>
+        )}
+
         {/* MODE 1: ดูเนื้อหา (Video & PDF) */}
         {mode === 'content' && (
           <div className="space-y-6">
@@ -249,16 +412,17 @@ export default function StudentLessonPage() {
               <div className="bg-white border border-border rounded-2xl p-4 space-y-3 shadow-sm">
                 <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
                   <PlayCircle className="w-4 h-4" /> วิดีโอประกอบการเรียน
+                  {videoFinished && (
+                    <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> ดูวิดีโอจนจบแล้ว
+                    </span>
+                  )}
                 </div>
                 <div className="aspect-video bg-black rounded-xl overflow-hidden border border-border">
                   {lesson.video_url.includes('youtube.com') || lesson.video_url.includes('youtu.be') ? (
-                    <iframe
-                      src={toYouTubeEmbedUrl(lesson.video_url) || lesson.video_url}
-                      className="w-full h-full"
-                      allowFullScreen
-                    />
+                    <div ref={playerContainerRef} className="w-full h-full" />
                   ) : (
-                    <video src={lesson.video_url} controls className="w-full h-full" />
+                    <video src={lesson.video_url} controls onEnded={markVideoFinished} className="w-full h-full" />
                   )}
                 </div>
               </div>
@@ -285,16 +449,45 @@ export default function StudentLessonPage() {
               </div>
             )}
 
-            {/* ปุ่มเข้าสู่แบบทดสอบประจำบทเรียน */}
+            {/* ปุ่มยืนยันเนื้อหาจบ / เข้าสู่แบบทดสอบประจำบทเรียน */}
             <div className="pt-4 border-t border-border flex justify-end">
-              <button
-                onClick={() => setMode('quiz')}
-                disabled={questions.length === 0}
-                className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-ink font-medium px-6 py-3 rounded-xl transition shadow-sm disabled:opacity-50"
-              >
-                <HelpCircle className="w-5 h-5" />
-                {questions.length > 0 ? `ทำแบบทดสอบประจำบทเรียน (${questions.length} ข้อ)` : 'ยังไม่มีแบบทดสอบในบทนี้'}
-              </button>
+              <div className={`flex items-center gap-3 ${videoFinished ? 'video-fade-in' : ''}`}>
+                {!lesson.video_url && !videoFinished && (
+                  <button
+                    onClick={markVideoFinished}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-3 rounded-xl transition shadow-sm"
+                  >
+                    <CheckCircle2 className="w-5 h-5" />
+                    ยืนยันว่าอ่านเนื้อหาจบแล้ว
+                  </button>
+                )}
+                <button
+                  onClick={() => setMode('quiz')}
+                  disabled={!videoFinished || questions.length === 0}
+                  className={`flex items-center gap-2 font-medium px-6 py-3 rounded-xl transition shadow-sm disabled:opacity-50 ${
+                    videoFinished
+                      ? 'bg-primary hover:bg-primary-dark text-ink'
+                      : 'bg-surface border border-border text-secondary'
+                  }`}
+                >
+                  {!videoFinished ? (
+                    <>
+                      <Lock className="w-5 h-5" />
+                      {lesson.video_url ? 'ดูวิดีโอจนจบก่อนทำแบบทดสอบ' : 'ยืนยันเนื้อหาก่อนทำแบบทดสอบ'}
+                    </>
+                  ) : questions.length > 0 ? (
+                    <>
+                      <HelpCircle className="w-5 h-5" />
+                      ทำแบบทดสอบประจำบทเรียน ({questions.length} ข้อ)
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" />
+                      บทนี้ไม่มีแบบทดสอบ (เรียนจบแล้ว)
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

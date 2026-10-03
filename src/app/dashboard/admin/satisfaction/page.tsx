@@ -3,20 +3,28 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { SURVEY_DIMENSIONS } from '@/lib/survey'
-import { RefreshCw, Smile, BarChart3, FileDown, Table2, Layers } from 'lucide-react'
+import { RefreshCw, Smile, BarChart3, FileDown, Table2, Layers, ClipboardCheck } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
 import SatisfactionBarChart from '@/components/charts/SatisfactionBarChart'
 import { csvCell, downloadCsv } from '@/lib/csv'
+
+type CourseRef = { title: string }[] | { title: string } | null | undefined
 
 interface SurveyRow {
   dimension: string
   score: number
   course_id: string
   user_id: string
-  courses?: { title: string }[] | { title: string } | null
+  courses?: CourseRef
 }
 
-function courseTitleOf(c: SurveyRow['courses']): string {
+interface PostTestRow {
+  user_id: string
+  course_id: string
+  courses?: CourseRef
+}
+
+function courseTitleOf(c: CourseRef): string {
   if (!c) return ''
   return Array.isArray(c) ? c[0]?.title || '' : c.title
 }
@@ -29,6 +37,7 @@ interface DimStat {
 }
 
 interface CourseStat {
+  courseId: string
   courseTitle: string
   n: number
   dims: DimStat[]
@@ -70,21 +79,42 @@ function columnAvg(dims: DimStat[]): number {
   return withData.length ? withData.reduce((s, d) => s + d.avg, 0) / withData.length : 0
 }
 
+function groupUsersByCourse(rows: { user_id: string; course_id: string }[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>()
+  rows.forEach((r) => {
+    const set = map.get(r.course_id) || new Set<string>()
+    set.add(r.user_id)
+    map.set(r.course_id, set)
+  })
+  return map
+}
+
 export default function AdminSatisfactionPage() {
   const supabase = useMemo(() => createClient(), [])
   const [rows, setRows] = useState<SurveyRow[]>([])
+  const [postTestRows, setPostTestRows] = useState<PostTestRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
-    const { data, error: err } = await supabase
-      .from('satisfaction_surveys')
-      .select('dimension, score, course_id, user_id, courses (title)')
-    if (err) {
-      setError(err.message)
+    const [surveyRes, postTestRes] = await Promise.all([
+      supabase
+        .from('satisfaction_surveys')
+        .select('dimension, score, course_id, user_id, courses (title)'),
+      supabase
+        .from('assessment_scores')
+        .select('user_id, course_id, courses (title)')
+        .eq('assessment_type', 'posttest')
+        .gt('total_questions', 0),
+    ])
+    if (surveyRes.error) {
+      setError(surveyRes.error.message)
+    } else if (postTestRes.error) {
+      setError(postTestRes.error.message)
     } else {
-      setRows(data ?? [])
+      setRows((surveyRes.data ?? []) as SurveyRow[])
+      setPostTestRows((postTestRes.data ?? []) as PostTestRow[])
       setUpdatedAt(new Date().toLocaleString('th-TH'))
       setError(null)
     }
@@ -108,6 +138,7 @@ export default function AdminSatisfactionPage() {
   })
   const perCourse: CourseStat[] = Array.from(courseMap.entries())
     .map(([title, list]) => ({
+      courseId: list[0].course_id,
       courseTitle: title,
       n: new Set(list.map((r) => r.user_id)).size,
       dims: computeStats(list),
@@ -115,6 +146,35 @@ export default function AdminSatisfactionPage() {
     .sort((a, b) => b.n - a.n)
 
   const responseCount = new Set(rows.map((r) => `${r.user_id}-${r.course_id}`)).size
+
+  // ฐานคำนวณอัตราการตอบ = นักเรียนที่ส่ง Post-test ของวิชานั้น (ตรงกับเงื่อนไขที่ระบบเปิดให้ทำแบบประเมิน)
+  const eligibleTotal = new Set(postTestRows.map((r) => `${r.user_id}-${r.course_id}`)).size
+  const eligibleByCourse = groupUsersByCourse(postTestRows)
+  const respondedByCourse = groupUsersByCourse(rows)
+  const overallRate = eligibleTotal > 0 ? (responseCount / eligibleTotal) * 100 : null
+
+  // รวมวิชาที่มีผู้ตอบ ∪ วิชาที่มีผู้ทำ Post-test เพื่อไม่ให้วิชาที่ยังไม่มีใครตอบหายไปจากตาราง
+  const rateRows = Array.from(new Set([...eligibleByCourse.keys(), ...respondedByCourse.keys()]))
+    .map((courseId) => {
+      const eligible = eligibleByCourse.get(courseId)?.size ?? 0
+      const responded = respondedByCourse.get(courseId)?.size ?? 0
+      return {
+        courseId,
+        title:
+          perCourse.find((c) => c.courseId === courseId)?.courseTitle ||
+          courseTitleOf(postTestRows.find((r) => r.course_id === courseId)?.courses) ||
+          courseId,
+        eligible,
+        responded,
+        rate: eligible > 0 ? (responded / eligible) * 100 : null,
+      }
+    })
+    .sort(
+      (a, b) =>
+        b.eligible - a.eligible ||
+        b.responded - a.responded ||
+        a.title.localeCompare(b.title, 'th')
+    )
   const overallAvg = overall.length
     ? overall.reduce((s, d) => s + d.avg, 0) / overall.length
     : 0
@@ -138,6 +198,22 @@ export default function AdminSatisfactionPage() {
     freqOverall.forEach((f) => {
       lines.push([csvCell(f.label), ...f.counts.map(String), String(f.total), f.mean.toFixed(2)].join(','))
     })
+    lines.push('')
+    lines.push(['รายวิชา', 'ผู้ทำ Post-test (ฐาน)', 'ผู้ตอบแบบประเมิน', 'อัตราการตอบ (%)'].join(','))
+    rateRows.forEach((r) => {
+      lines.push([
+        csvCell(r.title),
+        String(r.eligible),
+        String(r.responded),
+        r.rate === null ? '-' : r.rate.toFixed(2),
+      ].join(','))
+    })
+    lines.push([
+      csvCell('ภาพรวม'),
+      String(eligibleTotal),
+      String(responseCount),
+      overallRate === null ? '-' : overallRate.toFixed(2),
+    ].join(','))
     downloadCsv('satisfaction-summary.csv', lines)
   }
 
@@ -192,6 +268,11 @@ export default function AdminSatisfactionPage() {
               <div className="bg-white border border-border rounded-xl p-4 shadow-sm">
                 <p className="text-xs text-secondary">ผู้ตอบแบบประเมิน</p>
                 <p className="text-3xl font-bold text-ink mt-1">{responseCount} <span className="text-xs text-secondary font-normal">คน</span></p>
+                <p className="text-[11px] text-muted mt-1">
+                  {overallRate === null
+                    ? 'ยังไม่มีผู้ส่ง Post-test'
+                    : `จาก ${eligibleTotal} คนที่ทำ Post-test · ตอบกลับ ${overallRate.toFixed(1)}%`}
+                </p>
               </div>
               <div className="bg-white border border-border rounded-xl p-4 shadow-sm">
                 <p className="text-xs text-secondary">คะแนนเฉลี่ยรวม</p>
@@ -372,6 +453,53 @@ export default function AdminSatisfactionPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* ตารางอัตราการตอบแบบประเมิน */}
+            <div className="bg-white border border-border rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <ClipboardCheck className="w-5 h-5 text-amber-600" />
+                <h2 className="font-bold text-ink">ตารางอัตราการตอบแบบประเมินความพึงพอใจ</h2>
+              </div>
+              <p className="text-xs text-secondary mb-4">
+                ฐานคำนวณ = นักเรียนที่ส่ง Post-test ของวิชานั้น (ตรงกับเงื่อนไขที่ระบบเปิดให้ทำแบบประเมิน)
+              </p>
+              {eligibleTotal === 0 ? (
+                <p className="text-sm text-muted py-4">ยังไม่มีผู้ส่ง Post-test จึงยังคำนวณอัตราการตอบไม่ได้</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[640px]">
+                    <thead>
+                      <tr className="bg-surface text-left text-xs text-secondary">
+                        <th className="px-3 py-2 font-semibold border border-border">รายวิชา</th>
+                        <th className="px-3 py-2 font-semibold border border-border text-center min-w-[130px]">ผู้ทำ Post-test (ฐาน)</th>
+                        <th className="px-3 py-2 font-semibold border border-border text-center min-w-[130px]">ผู้ตอบแบบประเมิน</th>
+                        <th className="px-3 py-2 font-semibold border border-border text-center min-w-[110px]">อัตราการตอบ (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rateRows.map((r) => (
+                        <tr key={r.courseId} className="hover:bg-surface/60">
+                          <td className="px-3 py-2 border border-border text-ink font-medium">{r.title}</td>
+                          <td className="px-3 py-2 border border-border text-center text-ink">{r.eligible}</td>
+                          <td className="px-3 py-2 border border-border text-center text-ink">{r.responded}</td>
+                          <td className="px-3 py-2 border border-border text-center font-bold text-amber-700">
+                            {r.rate === null ? '-' : r.rate.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-surface">
+                        <td className="px-3 py-2 border border-border font-bold text-ink">ภาพรวม</td>
+                        <td className="px-3 py-2 border border-border text-center font-bold text-ink">{eligibleTotal}</td>
+                        <td className="px-3 py-2 border border-border text-center font-bold text-ink">{responseCount}</td>
+                        <td className="px-3 py-2 border border-border text-center font-bold text-amber-700">
+                          {overallRate === null ? '-' : overallRate.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </>
         )}

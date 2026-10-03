@@ -1,95 +1,60 @@
-"use client";
+import './animations.css'
 
-import { useEffect, useState } from "react";
-import { GraduationCap } from "lucide-react";
+import { useEffect, useState } from 'react'
 
-const FILL_DURATION = 1300;
-const OUT_DURATION = 700;
-
-type Phase = "filling" | "leaving" | "hidden";
-
-export default function LandingLoader({ onReady }: { onReady: () => void }) {
-  const [phase, setPhase] = useState<Phase>("filling");
-  const [progress, setProgress] = useState(0);
+export default function LandingLoader({ onReady }: { onReady?: () => void }) {
+  const [isExiting, setIsExiting] = useState(false)
+  const [isDone, setIsDone] = useState(false)
 
   useEffect(() => {
-    const html = document.documentElement;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let raf = 0;
-    let outTimer: number | undefined;
-    let disposed = false;
+    // Lock scroll during loader
+    const html = document.documentElement
+    html.classList.add('no-scroll')
 
-    if (reduceMotion) {
-      onReady();
-      html.classList.remove("no-scroll");
-      window.setTimeout(() => setPhase("hidden"), 0);
-      return () => html.classList.remove("no-scroll");
+    const t1 = setTimeout(() => {
+      setIsExiting(true)
+    }, 1300)
+
+    const t2 = setTimeout(() => {
+      setIsDone(true)
+      html.classList.remove('no-scroll')
+      onReady?.()
+    }, 2000)
+
+    // Respect reduced motion
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    if (mq.matches) {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      setIsExiting(true)
+      setIsDone(true)
+      html.classList.remove('no-scroll')
+      onReady?.()
     }
 
-    html.classList.add("no-scroll");
-    const start = performance.now();
-
-    const finishFill = () => {
-      if (disposed) return;
-      setProgress(100);
-      setPhase("leaving");
-      onReady();
-      outTimer = window.setTimeout(() => {
-        html.classList.remove("no-scroll");
-        setPhase("hidden");
-      }, OUT_DURATION);
-    };
-
-    const tick = (now: number) => {
-      if (disposed) return;
-      const t = Math.min((now - start) / FILL_DURATION, 1);
-      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      setProgress(Math.round(eased * 100));
-      if (t >= 1) {
-        finishFill();
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-
     return () => {
-      disposed = true;
-      cancelAnimationFrame(raf);
-      if (outTimer) window.clearTimeout(outTimer);
-      html.classList.remove("no-scroll");
-    };
-  }, [onReady]);
+      clearTimeout(t1)
+      clearTimeout(t2)
+      html.classList.remove('no-scroll')
+    }
+  }, [onReady])
 
-  if (phase === "hidden") return null;
+  if (isDone) return null
 
   return (
     <div
-      aria-hidden="true"
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0a0a0a] text-white transition-transform duration-[700ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        phase === "leaving" ? "-translate-y-full" : "translate-y-0"
+      className={`fixed inset-0 z-[9999] flex items-center justify-center bg-[#000000] transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
+        isExiting ? 'translate-y-full' : 'translate-y-0'
       }`}
+      aria-hidden="true"
     >
-      <div className="flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-ink">
-          <GraduationCap className="h-6 w-6" aria-hidden="true" />
-        </span>
-        <div className="text-left">
-          <p className="text-sm font-semibold tracking-wide">E-Learning Hub</p>
-          <p className="text-xs text-white/50">ระบบประเมินทักษะการเรียนรู้</p>
+      <div className="flex flex-col items-center gap-6">
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10">
+          <div className="h-10 w-10 animate-pulse rounded-xl bg-primary" />
+          <div className="absolute inset-0 -z-10 animate-pulse rounded-2xl bg-primary/20 blur-xl" />
         </div>
+        <p className="text-sm tracking-[0.2em] text-white/70 uppercase">Loading E-Learning Hub</p>
       </div>
-
-      <div className="mt-10 w-56">
-        <div className="h-px w-full bg-white/15">
-          <div className="h-px bg-primary" style={{ width: `${progress}%` }} />
-        </div>
-      </div>
-
-      <p className="mt-4 text-3xl font-semibold tabular-nums tracking-tight">
-        {String(progress).padStart(3, "0")}
-      </p>
     </div>
-  );
+  )
 }

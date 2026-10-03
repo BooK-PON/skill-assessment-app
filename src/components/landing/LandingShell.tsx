@@ -1,19 +1,17 @@
-"use client";
+'use client'
 
-import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
-import LandingLoader from "./LandingLoader";
-import LandingHero from "./LandingHero";
+import LandingHero from './LandingHero'
+import LandingLoader from './LandingLoader'
+import { useState } from 'react'
 
-export default function LandingShell({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false);
-  const handleReady = useCallback(() => setReady(true), []);
+export default function LandingShell({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false)
 
   return (
-    <div className="landing-shell flex min-h-screen flex-col bg-white text-ink">
-      <LandingLoader onReady={handleReady} />
-      <LandingHero ready={ready} />
-      <div className="flex flex-1 flex-col">{children}</div>
-    </div>
-  );
+    <>
+      <LandingLoader onReady={() => setReady(true)} />
+      <LandingHero isReady={ready} />
+      {children}
+    </>
+  )
 }

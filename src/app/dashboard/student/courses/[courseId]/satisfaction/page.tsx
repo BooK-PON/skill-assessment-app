@@ -90,6 +90,16 @@ export default function StudentSatisfactionPage() {
         .from('satisfaction_surveys')
         .upsert(rows, { onConflict: 'user_id,course_id,dimension' })
       if (error) throw error
+
+      // บันทึก activity log (หลักฐานการส่งแบบประเมินของนักเรียน) — ล้มเหลวไม่กระทบผลการประเมิน
+      await supabase.from('activity_logs').insert([
+        {
+          user_id: user.id,
+          action: 'submit_satisfaction',
+          target_type: 'survey',
+          detail: `ส่งแบบประเมินความพึงพอใจ 5 ด้าน วิชา "${courseTitle || courseId}"`,
+        },
+      ]).then(() => {})
       setSaved(true)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่'

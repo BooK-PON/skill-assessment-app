@@ -334,6 +334,16 @@ export default function StudentLessonPage() {
             .insert(attempts)
           if (attemptsError) throw attemptsError
         }
+
+        // บันทึก activity log (หลักฐานการส่งข้อสอบของนักเรียน) — ล้มเหลวไม่กระทบการบันทึกคะแนน
+        await supabase.from('activity_logs').insert([
+          {
+            user_id: user.id,
+            action: 'submit_lesson_quiz',
+            target_type: 'assessment',
+            detail: `ส่งควิซบทเรียน "${lesson?.title || lessonId}" ได้ ${calculatedScore}/${questions.length} คะแนน (${percentage}%)`,
+          },
+        ]).then(() => {})
       }
     } catch (err: any) {
       toast('เกิดข้อผิดพลาดในการบันทึกคะแนน: ' + (err.message || 'กรุณาลองใหม่'), 'error')

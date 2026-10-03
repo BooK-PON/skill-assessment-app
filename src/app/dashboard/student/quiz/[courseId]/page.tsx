@@ -169,6 +169,17 @@ export default function QuizPage({ params }: { params: Promise<{ courseId: strin
             .insert(attempts)
           if (attemptsError) throw attemptsError
         }
+
+        // บันทึก activity log (หลักฐานการส่งข้อสอบของนักเรียน) — ล้มเหลวไม่กระทบการบันทึกคะแนน
+        const typeLabel = testType === 'pre' ? 'Pre-test' : 'Post-test'
+        await supabase.from('activity_logs').insert([
+          {
+            user_id: user.id,
+            action: testType === 'pre' ? 'submit_pretest' : 'submit_posttest',
+            target_type: 'assessment',
+            detail: `ส่ง${typeLabel} วิชา "${course?.title || courseId}" ได้ ${score}/${total} คะแนน (${percentage}%)`,
+          },
+        ]).then(() => {})
       }
 
       setResult({ score, total, percentage })

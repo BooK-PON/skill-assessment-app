@@ -51,11 +51,20 @@ export default function StudentAssessmentPage() {
   const [submitting, setSubmitting] = useState(false)
   const [score, setScore] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [courseTitle, setCourseTitle] = useState('')
 
   useEffect(() => {
     async function fetchAndRandomizeQuestions() {
       setLoading(true)
       setError(null)
+      // ชื่อวิชา (ใช้แสดงผลและบันทึก activity log)
+      const { data: courseData } = await supabase
+        .from('courses')
+        .select('title')
+        .eq('id', courseId)
+        .maybeSingle()
+      if (courseData) setCourseTitle(courseData.title)
+
       // ดึงข้อสอบทั้งหมดในรายวิชา
       const { data: qData, error: qError } = await supabase
         .from('questions')
@@ -142,6 +151,17 @@ export default function StudentAssessmentPage() {
             .insert(attempts)
           if (attemptsError) throw attemptsError
         }
+
+        // บันทึก activity log (หลักฐานการส่งข้อสอบของนักเรียน) — ล้มเหลวไม่กระทบการบันทึกคะแนน
+        const typeLabel = type === 'pre' ? 'Pre-test' : 'Post-test'
+        await supabase.from('activity_logs').insert([
+          {
+            user_id: user.id,
+            action: type === 'pre' ? 'submit_pretest' : 'submit_posttest',
+            target_type: 'assessment',
+            detail: `ส่ง${typeLabel} วิชา "${courseTitle || courseId}" ได้ ${calculatedScore}/${questions.length} คะแนน (${percentage}%)`,
+          },
+        ]).then(() => {})
       }
     } catch (err: any) {
       toast('เกิดข้อผิดพลาดในการบันทึกคะแนน: ' + (err.message || 'กรุณาลองใหม่'), 'error')

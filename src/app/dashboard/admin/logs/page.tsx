@@ -22,6 +22,10 @@ const actionLabels: Record<string, string> = {
   edit_course: 'แก้ไขรายวิชา',
   delete_course: 'ลบรายวิชา',
   toggle_course_status: 'สลับสถานะรายวิชา',
+  submit_pretest: 'นักเรียนส่ง Pre-test',
+  submit_posttest: 'นักเรียนส่ง Post-test',
+  submit_lesson_quiz: 'นักเรียนส่งควิซบทเรียน',
+  submit_satisfaction: 'นักเรียนส่งแบบประเมิน',
 }
 
 export default function AdminLogsPage() {
@@ -72,7 +76,7 @@ export default function AdminLogsPage() {
           <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
             <History className="w-6 h-6 text-rose-600" /> ประวัติการใช้งานระบบ
           </h1>
-          <p className="text-secondary text-sm mt-1">บันทึกกิจกรรมสำคัญในระบบ เช่น การเปลี่ยนบทบาทและการจัดการรายวิชา</p>
+          <p className="text-secondary text-sm mt-1">บันทึกกิจกรรมสำคัญในระบบ เช่น การเปลี่ยนบทบาท การจัดการรายวิชา และการส่งข้อสอบ/แบบประเมินของนักเรียน</p>
         </div>
 
         {error && (

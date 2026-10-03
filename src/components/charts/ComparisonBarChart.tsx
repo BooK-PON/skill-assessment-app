@@ -16,11 +16,15 @@ interface ComparisonBarProps {
 }
 
 export default function ComparisonBarChart({ data }: ComparisonBarProps) {
-  const chartData = data.map((d) => ({
-    name: d.label,
-    'Pre-test': d.pre ?? 0,
-    'Post-test': d.post ?? 0,
-  }))
+  // ข้ามด้านที่ยังไม่มีข้อสอบเลย (ไม่มีทั้ง pre/post) และไม่บีบ null ให้เป็น 0
+  // เพื่อไม่ให้กราฟดูเหมือนผู้เรียนตอบผิดหมดในด้านที่ยังไม่มีข้อมูล
+  const chartData = data
+    .filter((d) => d.pre !== null || d.post !== null)
+    .map((d) => ({
+      name: d.label,
+      'Pre-test': d.pre ?? undefined,
+      'Post-test': d.post ?? undefined,
+    }))
 
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -46,7 +50,7 @@ export default function ComparisonBarChart({ data }: ComparisonBarProps) {
             borderRadius: '8px',
             fontSize: '12px',
           }}
-          formatter={(value) => [`${value ?? 0}%`]}
+          formatter={(value) => [value === null || value === undefined ? '-' : `${value}%`]}
         />
         <Legend wrapperStyle={{ fontSize: '12px' }} />
         <Bar dataKey="Pre-test" fill="#9333ea" radius={[4, 4, 0, 0]} />

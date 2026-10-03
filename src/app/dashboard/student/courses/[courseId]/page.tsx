@@ -6,9 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
 import { BookOpen, CheckCircle, Play, FileText, Lock, Award, ArrowLeft, UserPlus, BarChart3 } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
-import { SKILL_DIMENSION_LABELS, computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
+import { computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
 import SkillRadarChart from '@/components/charts/SkillRadarChart'
 import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
+import SkillDimCards from '@/components/charts/SkillDimCards'
 
 interface Lesson {
   id: string
@@ -431,21 +432,7 @@ export default function StudentCourseDetailPage() {
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
-                {skillDims.map((d) => (
-                  <div key={d.key} className="bg-surface border border-border rounded-xl p-3">
-                    <p className="text-[11px] text-ink font-medium mb-1">{d.label}</p>
-                    <p className="text-[10px] text-secondary mb-2">
-                      {SKILL_DIMENSION_LABELS[d.key]}
-                      <span className="text-muted"> · {d.preCount + d.postCount} ข้อ</span>
-                    </p>
-                    <div className="flex gap-3 text-[10px]">
-                      <span className="text-purple-600 font-bold">Pre {d.pre !== null ? `${d.pre}%` : '-'}</span>
-                      <span className="text-emerald-600 font-bold">Post {d.post !== null ? `${d.post}%` : '-'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SkillDimCards dims={skillDims} />
             </>
           )}
         </div>

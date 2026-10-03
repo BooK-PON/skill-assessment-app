@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { SKILL_DIMENSION_LABELS, computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
-import { TrendingUp, RefreshCw, Compass, BookOpen, Sparkles } from 'lucide-react'
+import { computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
+import { TrendingUp, RefreshCw, Compass, BookOpen, Sparkles, Download } from 'lucide-react'
 import Link from 'next/link'
 import Skeleton from '@/components/ui/Skeleton'
 import SkillRadarChart from '@/components/charts/SkillRadarChart'
 import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
+import SkillDimCards from '@/components/charts/SkillDimCards'
+import { csvCell, downloadCsv } from '@/lib/csv'
 
 interface CourseRow {
   course_id: string
@@ -193,6 +195,35 @@ export default function StudentProgressPage() {
     .filter((x) => x.val !== null)
     .sort((a, b) => (a.val ?? 0) - (b.val ?? 0))[0]
 
+  const exportSkillsCsv = () => {
+    const lines = [
+      [
+        csvCell('ทักษะ'),
+        csvCell('จำนวนข้อ Pre-test'),
+        csvCell('คะแนน Pre-test (%)'),
+        csvCell('จำนวนข้อ Post-test'),
+        csvCell('คะแนน Post-test (%)'),
+        csvCell('ผลต่าง (จุด)'),
+      ].join(','),
+    ]
+    dims.forEach((d) => {
+      const diff = d.pre !== null && d.post !== null ? Number((d.post - d.pre).toFixed(2)) : null
+      lines.push(
+        [
+          csvCell(d.label),
+          String(d.preCount),
+          d.pre !== null ? String(d.pre) : '-',
+          String(d.postCount),
+          d.post !== null ? String(d.post) : '-',
+          diff !== null ? String(diff) : '-',
+        ].join(','),
+      )
+    })
+    lines.push('')
+    lines.push([csvCell('รายวิชา'), csvCell(selectedTitle || '-'), csvCell('อัปเดต'), csvCell(updatedAt || '-')].join(','))
+    downloadCsv('skill-dimensions.csv', lines)
+  }
+
   return (
     <div className="p-6">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -264,9 +295,18 @@ export default function StudentProgressPage() {
                 <Sparkles className="w-5 h-5 text-emerald-600" />
                 <h2 className="font-bold text-ink">{selectedTitle || 'รายวิชาที่เลือก'}</h2>
               </div>
-              <p className="text-xs text-secondary mb-5">
-                กราฟแสดงร้อยละความถูกต้องรายทักษะ · สีม่วง = ก่อนเรียน (Pre-test) · สีเขียว = หลังเรียน (Post-test)
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                <p className="text-xs text-secondary">
+                  กราฟแสดงร้อยละความถูกต้องรายทักษะ · สีม่วง = ก่อนเรียน (Pre-test) · สีเขียว = หลังเรียน (Post-test)
+                </p>
+                <button
+                  onClick={exportSkillsCsv}
+                  className="inline-flex items-center gap-1.5 bg-white hover:bg-surface border border-border text-xs font-medium px-3 py-1.5 rounded-lg transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  ส่งออก CSV
+                </button>
+              </div>
 
               {dims.every((d) => d.pre === null && d.post === null) ? (
                 <p className="text-sm text-secondary text-center py-8">
@@ -285,21 +325,7 @@ export default function StudentProgressPage() {
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-3">
-                    {dims.map((d) => (
-                      <div key={d.key} className="bg-surface border border-border rounded-xl p-3">
-                        <p className="text-[11px] text-ink font-medium mb-1">{d.label}</p>
-                        <p className="text-[10px] text-secondary mb-2">
-                          {SKILL_DIMENSION_LABELS[d.key]}
-                          <span className="text-muted"> · {d.preCount + d.postCount} ข้อ</span>
-                        </p>
-                        <div className="flex gap-3 text-[10px]">
-                          <span className="text-purple-600 font-bold">Pre {d.pre !== null ? `${d.pre}%` : '-'}</span>
-                          <span className="text-emerald-600 font-bold">Post {d.post !== null ? `${d.post}%` : '-'}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <SkillDimCards dims={dims} />
 
                   {hasPosttest && selected && (
                     <Link

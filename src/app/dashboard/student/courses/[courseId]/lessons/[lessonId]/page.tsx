@@ -85,8 +85,11 @@ export default function StudentLessonPage() {
 
   // สถานะการดูวิดีโอจบ (บันทึกใน localStorage เพื่อคงค่าเมื่อรีเฟรชหน้า)
   const [videoFinished, setVideoFinished] = useState(false)
+  const [showQuizPrompt, setShowQuizPrompt] = useState(false)
   const playerContainerRef = useRef<HTMLDivElement | null>(null)
   const ytPlayerRef = useRef<{ destroy: () => void } | null>(null)
+  // เก็บว่าบทนี้มีข้อสอบหรือไม่ (ผ่าน ref เพื่อไม่ให้ YouTube Player ถูกสร้างใหม่เมื่อข้อสอบโหลดเสร็จ)
+  const hasQuizRef = useRef(false)
 
   const markVideoFinished = useCallback(() => {
     setVideoFinished(true)
@@ -97,14 +100,13 @@ export default function StudentLessonPage() {
     }
   }, [lessonId])
 
-  // ยืนยันอ่านเนื้อหาจบแล้ว (บทที่ไม่มีวิดีโอ / PDF) แล้วเปิดแบบทดสอบทันที
-  // ถ้าบทนี้ไม่มีข้อสอบ ให้อยู่ในโหมดเนื้อหาเพื่อให้บันทึก "เรียนจบ" (P1-1) ทำงาน
-  const handleConfirmContentDone = useCallback(() => {
+  // ดูเสร็จหรือยืนยันอ่านจบ แล้วมีข้อสอบในบท → ขึ้น popup ถามทำแบบทดสอบทันทีในหน้าเดิม
+  const handleContentFinished = useCallback(() => {
     markVideoFinished()
-    if (questions.length > 0) {
-      setMode('quiz')
+    if (hasQuizRef.current) {
+      setShowQuizPrompt(true)
     }
-  }, [markVideoFinished, questions.length])
+  }, [markVideoFinished])
 
   // ตรวจสอบสถานะการดูวิดีโอจบจาก localStorage ครั้งแรกที่เปิดหน้า
   useEffect(() => {
@@ -141,7 +143,7 @@ export default function StudentLessonPage() {
         events: {
           onStateChange: (event) => {
             if (event.data === window.YT?.PlayerState.ENDED) {
-              markVideoFinished()
+              handleContentFinished()
             }
           },
         },
@@ -174,7 +176,7 @@ export default function StudentLessonPage() {
       ytPlayerRef.current?.destroy()
       ytPlayerRef.current = null
     }
-  }, [lesson, mode, markVideoFinished])
+  }, [lesson, mode, handleContentFinished])
 
   // บันทึกผล "เรียนจบ" สำหรับบทเรียนที่ไม่มีแบบทดสอบ (total_questions = 0)
   // เพื่อให้บทเรียนนี้ถูกนับรวมใน completedLessons ของหน้ารายวิชา (แก้ P1-1)
@@ -276,6 +278,7 @@ export default function StudentLessonPage() {
             return { ...q, options: parsedOptions }
           })
         )
+        hasQuizRef.current = qData.length > 0
       }
 
       setLoading(false)
@@ -446,7 +449,7 @@ export default function StudentLessonPage() {
                   {lesson.video_url.includes('youtube.com') || lesson.video_url.includes('youtu.be') ? (
                     <div ref={playerContainerRef} className="w-full h-full" />
                   ) : (
-                    <video src={lesson.video_url} controls onEnded={markVideoFinished} className="w-full h-full" />
+                    <video src={lesson.video_url} controls onEnded={handleContentFinished} className="w-full h-full" />
                   )}
                 </div>
               </div>
@@ -481,7 +484,7 @@ export default function StudentLessonPage() {
               <div className={`flex items-center gap-3 ${videoFinished ? 'video-fade-in' : ''}`}>
                 {!lesson.video_url && !videoFinished && (
                   <button
-                    onClick={handleConfirmContentDone}
+                    onClick={handleContentFinished}
                     className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-3 rounded-xl transition shadow-sm"
                   >
                     <CheckCircle2 className="w-5 h-5" />
@@ -623,6 +626,55 @@ export default function StudentLessonPage() {
         )}
 
       </div>
+
+      {/* Popup ถามทำแบบทดสอบเมื่อดูวิดีโอ/อ่าน PDF จบแล้ว (ยังอยู่ในหน้าเดิม) */}
+      {showQuizPrompt && questions.length > 0 && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="quiz-prompt-title"
+            className="bg-white border border-border rounded-2xl p-6 w-full max-w-md space-y-4 shadow-lg"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 p-3 bg-primary-light text-primary-dark rounded-xl">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 id="quiz-prompt-title" className="font-bold text-ink text-lg">
+                  ดูเนื้อหาเสร็จแล้ว!
+                </h3>
+                <p className="text-secondary text-sm mt-1">
+                  ถึงเวลาทำแบบทดสอบประจำบทเรียน{' '}
+                  <span className="font-semibold text-ink">{lesson.title}</span>{' '}
+                  ({questions.length} ข้อ) — ลองทำทันทีได้เลย
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowQuizPrompt(false)}
+                className="px-4 py-2.5 rounded-xl text-sm bg-surface text-secondary hover:bg-surface border border-border font-medium transition"
+              >
+                ดูเนื้อหาอีกครั้ง
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuizPrompt(false)
+                  setMode('quiz')
+                }}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm bg-primary text-ink font-medium hover:bg-primary-dark shadow-sm transition"
+              >
+                <HelpCircle className="w-4 h-4" />
+                ทำแบบทดสอบเลย
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

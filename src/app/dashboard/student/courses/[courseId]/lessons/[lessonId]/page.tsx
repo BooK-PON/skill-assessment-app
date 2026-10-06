@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
+import { toPdfEmbedUrl } from '@/lib/lessons'
 import { ArrowLeft, BookOpen, CheckCircle2, HelpCircle, PlayCircle, FileText, ArrowRight, Lock } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
 
@@ -80,6 +81,7 @@ export default function StudentLessonPage() {
   const [score, setScore] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [nextLessonId, setNextLessonId] = useState<string | null>(null)
+  const [lessonPosition, setLessonPosition] = useState<number | null>(null)
 
   // สถานะการดูวิดีโอจบ (บันทึกใน localStorage เพื่อคงค่าเมื่อรีเฟรชหน้า)
   const [videoFinished, setVideoFinished] = useState(false)
@@ -94,6 +96,15 @@ export default function StudentLessonPage() {
       // localStorage ไม่พร้อมใช้งาน (เช่น โหมดส่วนตัว) ข้ามไปได้
     }
   }, [lessonId])
+
+  // ยืนยันอ่านเนื้อหาจบแล้ว (บทที่ไม่มีวิดีโอ / PDF) แล้วเปิดแบบทดสอบทันที
+  // ถ้าบทนี้ไม่มีข้อสอบ ให้อยู่ในโหมดเนื้อหาเพื่อให้บันทึก "เรียนจบ" (P1-1) ทำงาน
+  const handleConfirmContentDone = useCallback(() => {
+    markVideoFinished()
+    if (questions.length > 0) {
+      setMode('quiz')
+    }
+  }, [markVideoFinished, questions.length])
 
   // ตรวจสอบสถานะการดูวิดีโอจบจาก localStorage ครั้งแรกที่เปิดหน้า
   useEffect(() => {
@@ -235,8 +246,11 @@ export default function StudentLessonPage() {
           setError(courseLessonsError.message)
         } else if (courseLessons) {
           const currentIdx = courseLessons.findIndex(l => l.id === lessonId)
-          if (currentIdx !== -1 && currentIdx < courseLessons.length - 1) {
-            setNextLessonId(courseLessons[currentIdx + 1].id)
+          if (currentIdx !== -1) {
+            setLessonPosition(currentIdx + 1)
+            if (currentIdx < courseLessons.length - 1) {
+              setNextLessonId(courseLessons[currentIdx + 1].id)
+            }
           }
         }
       }
@@ -397,7 +411,7 @@ export default function StudentLessonPage() {
             <ArrowLeft className="w-4 h-4" /> กลับสู่หน้ารายวิชา
           </button>
           <span className="text-xs bg-blue-500/10 text-blue-600 border border-blue-500/20 px-3 py-1 rounded-full font-semibold">
-            บทเรียนที่ {lesson.order_index}
+            บทเรียนที่ {lessonPosition ?? lesson.order_index}
           </span>
         </div>
 
@@ -440,22 +454,25 @@ export default function StudentLessonPage() {
 
             {/* ส่วนเอกสาร PDF */}
             {lesson.pdf_url && (
-              <div className="bg-white border border-border rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="w-6 h-6 text-purple-600 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink">เอกสารประกอบการเรียน (PDF)</p>
-                    <p className="text-xs text-secondary">ดาวน์โหลดหรือเปิดดูเนื้อหาเพิ่มเติม</p>
+              <div className="bg-white border border-border rounded-2xl p-4 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-purple-600">
+                    <FileText className="w-4 h-4" /> เอกสารประกอบการเรียน (PDF)
                   </div>
+                  <a
+                    href={lesson.pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs bg-surface hover:bg-surface border border-border text-ink px-3 py-1.5 rounded-lg font-medium transition"
+                  >
+                    เปิดในแท็บใหม่
+                  </a>
                 </div>
-                <a
-                  href={lesson.pdf_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-surface hover:bg-surface border border-border text-ink text-xs px-4 py-2 rounded-lg font-medium transition"
-                >
-                  เปิดเอกสาร PDF
-                </a>
+                <iframe
+                  src={toPdfEmbedUrl(lesson.pdf_url)}
+                  title={`เอกสาร PDF ของบทเรียน ${lesson.title}`}
+                  className="h-[65vh] w-full rounded-xl border border-border"
+                />
               </div>
             )}
 
@@ -464,7 +481,7 @@ export default function StudentLessonPage() {
               <div className={`flex items-center gap-3 ${videoFinished ? 'video-fade-in' : ''}`}>
                 {!lesson.video_url && !videoFinished && (
                   <button
-                    onClick={markVideoFinished}
+                    onClick={handleConfirmContentDone}
                     className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-3 rounded-xl transition shadow-sm"
                   >
                     <CheckCircle2 className="w-5 h-5" />

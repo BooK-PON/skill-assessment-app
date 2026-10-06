@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, Save, Video, FileText, BookOpen, HelpCircle } from 'lucide-react'
 import Link from 'next/link'
 import { SKILL_DIMENSIONS } from '@/lib/survey'
+import { DEFAULT_COURSE_CAPACITY, MAX_COURSE_CAPACITY, MIN_COURSE_CAPACITY, parseCapacity } from '@/lib/capacity'
+import { isValidMediaUrl, MAX_LESSONS_PER_COURSE, MIN_LESSONS_PER_COURSE } from '@/lib/lessons'
 
 interface LessonInput {
   lesson_number: number
@@ -28,6 +30,8 @@ export default function CreateCoursePage() {
   const { toast } = useToast()
   const [courseTitle, setCourseTitle] = useState('')
   const [courseDescription, setCourseDescription] = useState('')
+  const [capacity, setCapacity] = useState(String(DEFAULT_COURSE_CAPACITY))
+  const [capacityError, setCapacityError] = useState<string | null>(null)
 
   // เริ่มต้นสร้างบทเรียนแรกไว้ 1 บท (อาจารย์สามารถกดเพิ่มเป็น 10 บทได้)
   const [lessons, setLessons] = useState<LessonInput[]>([
@@ -47,6 +51,10 @@ export default function CreateCoursePage() {
 
   // --- จัดการบทเรียน ---
   const handleAddLesson = () => {
+    if (lessons.length >= MAX_LESSONS_PER_COURSE) {
+      toast(`เพิ่มบทเรียนได้สูงสุด ${MAX_LESSONS_PER_COURSE} บทต่อคอร์ส`, 'warning')
+      return
+    }
     const nextNum = lessons.length + 1
     setLessons([
       ...lessons,
@@ -55,7 +63,10 @@ export default function CreateCoursePage() {
   }
 
   const handleRemoveLesson = (index: number) => {
-    if (lessons.length === 1) return
+    if (lessons.length <= MIN_LESSONS_PER_COURSE) {
+      toast(`ต้องมีบทเรียนอย่างน้อย ${MIN_LESSONS_PER_COURSE} บทต่อคอร์ส`, 'warning')
+      return
+    }
     const updated = lessons.filter((_, i) => i !== index).map((l, i) => ({ ...l, lesson_number: i + 1 }))
     setLessons(updated)
   }
@@ -101,10 +112,26 @@ export default function CreateCoursePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('กรุณาล็อกอินก่อนดำเนินการ')
 
+      // ตรวจสอบลิงก์สื่อของทุกบทเรียนก่อนบันทึก: ต้องเป็น URL บนอินเทอร์เน็ต (http/https)
+      for (let i = 0; i < lessons.length; i++) {
+        const l = lessons[i]
+        if (!isValidMediaUrl(l.video_url)) {
+          throw new Error(`ลิงก์วิดีโอของบทที่ ${l.lesson_number} ต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น`)
+        }
+        if (!isValidMediaUrl(l.pdf_url)) {
+          throw new Error(`ลิงก์ PDF ของบทที่ ${l.lesson_number} ต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น`)
+        }
+      }
+
       // 1. สร้างวิชา (courses)
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
-        .insert([{ title: courseTitle, description: courseDescription, created_by: user.id }])
+        .insert([{
+          title: courseTitle,
+          description: courseDescription,
+          created_by: user.id,
+          capacity: parseCapacity(capacity).value,
+        }])
         .select()
         .single()
 
@@ -206,6 +233,28 @@ export default function CreateCoursePage() {
                 placeholder="คำอธิบายสั้นๆ เกี่ยวกับทักษะที่จะได้เรียนรู้ในคอร์สนี้..."
                 className="w-full bg-white border border-border rounded-lg px-4 py-2.5 text-ink focus:outline-none focus:border-primary-dark"
               />
+            </div>
+            <div>
+              <label htmlFor="course-capacity" className="block text-sm font-medium text-secondary mb-1">
+                จำนวนผู้เรียนสูงสุด
+              </label>
+              <input
+                id="course-capacity"
+                type="number"
+                min={MIN_COURSE_CAPACITY}
+                max={MAX_COURSE_CAPACITY}
+                value={capacity}
+                onChange={(e) => {
+                  setCapacity(e.target.value)
+                  setCapacityError(parseCapacity(e.target.value).error)
+                }}
+                aria-invalid={capacityError ? true : undefined}
+                aria-describedby="course-capacity-helper"
+                className="w-full bg-white border border-border rounded-lg px-4 py-2.5 text-ink focus:outline-none focus:border-primary-dark"
+              />
+              <p id="course-capacity-helper" className="mt-1 text-xs text-secondary">
+                {capacityError ?? `ระหว่าง ${MIN_COURSE_CAPACITY} - ${MAX_COURSE_CAPACITY} คน (ค่าเริ่มต้น ${DEFAULT_COURSE_CAPACITY} คน)`}
+              </p>
             </div>
           </div>
 

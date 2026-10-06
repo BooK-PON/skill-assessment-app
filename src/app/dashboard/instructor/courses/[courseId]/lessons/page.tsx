@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { nextLessonOrder, renumberLessons, isValidMediaUrl, MAX_LESSONS_PER_COURSE, MIN_LESSONS_PER_COURSE } from '@/lib/lessons'
 import Link from 'next/link'
 import { ArrowLeft, Plus, BookOpen, Trash2, Video, FileText, X } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
@@ -101,16 +102,22 @@ export default function InstructorLessonsPage() {
       toast('กรุณากรอกชื่อบทเรียน', 'warning')
       return
     }
+    if (!isValidMediaUrl(videoUrl)) {
+      toast('ลิงก์วิดีโอต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น', 'warning')
+      return
+    }
+    if (!isValidMediaUrl(pdfUrl)) {
+      toast('ลิงก์ PDF ต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น', 'warning')
+      return
+    }
+    if ((lessons?.length ?? 0) >= MAX_LESSONS_PER_COURSE
+      || nextLessonOrder(lessons) > MAX_LESSONS_PER_COURSE) {
+      toast(`เพิ่มบทเรียนได้สูงสุด ${MAX_LESSONS_PER_COURSE} บทต่อคอร์ส`, 'warning')
+      return
+    }
 
     setSubmitting(true)
-    // ใช้ MAX(order_index)+1 เพื่อป้องกันเลขซ้ำหลังลบบทเรียน
-    const { data: maxData } = await supabase
-      .from('lessons')
-      .select('order_index')
-      .eq('course_id', courseId)
-      .order('order_index', { ascending: false })
-      .limit(1)
-    const nextOrder = (maxData && maxData[0]?.order_index ? maxData[0].order_index : 0) + 1
+    const nextOrder = nextLessonOrder(lessons)
 
     const { error } = await supabase.from('lessons').insert([
       {
@@ -149,16 +156,42 @@ export default function InstructorLessonsPage() {
       toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
       return
     }
-
-    const { error } = await supabase.from('lessons').delete().eq('id', deleteTarget.id)
-    if (error) {
-      toast('เกิดข้อผิดพลาด: ' + error.message, 'error')
-    } else {
-      toast('ลบบทเรียนแล้ว', 'success')
-      fetchData()
+    if ((lessons?.length ?? 0) <= MIN_LESSONS_PER_COURSE) {
+      setDeleteOpen(false)
+      setDeleteTarget(null)
+      toast(`ต้องมีบทเรียนอย่างน้อย ${MIN_LESSONS_PER_COURSE} บทต่อคอร์ส จึงลบบทเรียนนี้ไม่ได้`, 'warning')
+      return
     }
+
+    const { data: deletedRows, error } = await supabase
+      .from('lessons')
+      .delete()
+      .eq('id', deleteTarget.id)
+      .select('id')
+
     setDeleteOpen(false)
     setDeleteTarget(null)
+
+    if (error) {
+      toast('เกิดข้อผิดพลาด: ' + error.message, 'error')
+      return
+    }
+    if (!deletedRows || deletedRows.length === 0) {
+      toast('ลบบทเรียนไม่สำเร็จ: ไม่พบบทเรียนที่ต้องการลบ (หรือไม่มีสิทธิ์ลบ)', 'error')
+      return
+    }
+
+    let renumbered = false
+    try {
+      renumbered = await renumberLessons(courseId)
+    } catch (err) {
+      toast('ลบบทเรียนแล้ว แต่เรียงเลขบทเรียนใหม่ไม่สำเร็จ: ' + ((err as Error).message || 'กรุณาลองใหม่'), 'error')
+    }
+    // ลบสำเร็จแล้วต้องดึงข้อมูลใหม่เสมอ ไม่งั้นบทที่ลบจะยังโผล่บนหน้าจอจนกว่าจะรีเฟรช
+    fetchData()
+    if (renumbered) {
+      toast('ลบบทเรียนแล้ว', 'success')
+    }
   }
 
   if (loading) {
@@ -209,7 +242,7 @@ export default function InstructorLessonsPage() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white border border-border rounded-2xl p-6 w-full max-w-lg space-y-4 shadow-xl">
               <div className="flex justify-between items-center border-b border-border pb-3">
-                <h3 className="font-bold text-lg text-ink">เพิ่มบทเรียนที่ {lessons.length + 1}</h3>
+                <h3 className="font-bold text-lg text-ink">เพิ่มบทเรียนที่ {nextLessonOrder(lessons)}</h3>
                 <button onClick={() => setIsModalOpen(false)} className="text-secondary hover:text-ink">
                   <X className="w-5 h-5" />
                 </button>

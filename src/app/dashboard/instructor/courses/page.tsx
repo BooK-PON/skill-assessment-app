@@ -3,16 +3,25 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { Plus, BookOpen, HelpCircle, BarChart3, Trash2, Layers, FolderPlus, X } from 'lucide-react'
+import { Plus, BookOpen, HelpCircle, BarChart3, Trash2, Layers, FolderPlus, X, Users } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Skeleton from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
+import {
+  DEFAULT_COURSE_CAPACITY,
+  MAX_COURSE_CAPACITY,
+  MIN_COURSE_CAPACITY,
+  occupancyLabel,
+  parseCapacity,
+} from '@/lib/capacity'
 
 interface Course {
   id: string
   title: string
   description: string
   created_at: string
+  active_count?: number
+  capacity?: number
   lessons_count?: number
   questions_count?: number
 }
@@ -26,6 +35,8 @@ export default function InstructorCoursesPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDescription, setNewDescription] = useState('')
+  const [newCapacity, setNewCapacity] = useState(String(DEFAULT_COURSE_CAPACITY))
+  const [newCapacityError, setNewCapacityError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
@@ -74,6 +85,13 @@ export default function InstructorCoursesPage() {
       toast('กรุณากรอกชื่อรายวิชา', 'warning')
       return
     }
+    const parsedCapacity = parseCapacity(newCapacity)
+    if (parsedCapacity.error) {
+      setNewCapacityError(parsedCapacity.error)
+      toast(parsedCapacity.error, 'warning')
+      return
+    }
+    setNewCapacityError(null)
 
     setSubmitting(true)
 
@@ -90,6 +108,7 @@ export default function InstructorCoursesPage() {
         title: newTitle,
         description: newDescription,
         created_by: user.id,
+        capacity: parsedCapacity.value,
       },
     ])
 
@@ -99,6 +118,7 @@ export default function InstructorCoursesPage() {
       toast('สร้างรายวิชาแล้ว', 'success')
       setNewTitle('')
       setNewDescription('')
+      setNewCapacity(String(DEFAULT_COURSE_CAPACITY))
       setIsCreating(false)
       fetchCourses()
     }
@@ -214,6 +234,30 @@ export default function InstructorCoursesPage() {
                   />
                 </div>
 
+                <div>
+                  <label htmlFor="new-course-capacity" className="block text-xs font-semibold text-ink mb-1">
+                    จำนวนผู้เรียนสูงสุด
+                  </label>
+                  <input
+                    id="new-course-capacity"
+                    type="number"
+                    min={MIN_COURSE_CAPACITY}
+                    max={MAX_COURSE_CAPACITY}
+                    placeholder={`ค่าเริ่มต้น ${DEFAULT_COURSE_CAPACITY}`}
+                    value={newCapacity}
+                    onChange={(e) => {
+                      setNewCapacity(e.target.value)
+                      setNewCapacityError(parseCapacity(e.target.value).error)
+                    }}
+                    aria-invalid={newCapacityError ? true : undefined}
+                    aria-describedby="new-course-capacity-helper"
+                    className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-purple-500"
+                  />
+                  <p id="new-course-capacity-helper" className="mt-1 text-xs text-secondary">
+                    {newCapacityError ?? `ระหว่าง ${MIN_COURSE_CAPACITY} - ${MAX_COURSE_CAPACITY} คน`}
+                  </p>
+                </div>
+
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
@@ -286,6 +330,10 @@ export default function InstructorCoursesPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <HelpCircle className="w-3.5 h-3.5 text-purple-600" /> {course.questions_count} ข้อสอบ
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5 text-emerald-600" />
+                      {occupancyLabel(course.active_count ?? 0, course.capacity ?? DEFAULT_COURSE_CAPACITY)}
                     </span>
                   </div>
                 </div>

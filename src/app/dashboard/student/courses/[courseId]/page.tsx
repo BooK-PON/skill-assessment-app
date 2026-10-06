@@ -10,6 +10,12 @@ import { computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
 import SkillRadarChart from '@/components/charts/SkillRadarChart'
 import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
 import SkillDimCards from '@/components/charts/SkillDimCards'
+import {
+  DEFAULT_COURSE_CAPACITY,
+  capacityLabel,
+  fullCourseMessage,
+  isCourseFull,
+} from '@/lib/capacity'
 
 interface Lesson {
   id: string
@@ -33,6 +39,7 @@ export default function StudentCourseDetailPage() {
   const [enrollmentStatus, setEnrollmentStatus] = useState<string | null>(null)
   const [enrolling, setEnrolling] = useState(false)
   const [activeCount, setActiveCount] = useState(0)
+  const [capacity, setCapacity] = useState(DEFAULT_COURSE_CAPACITY)
   const [skillDims, setSkillDims] = useState<SkillDim[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +57,7 @@ export default function StudentCourseDetailPage() {
       // 1. ดึงข้อมูลวิชา
       const { data: course, error: courseError } = await supabase
         .from('courses')
-        .select('title, active_count')
+        .select('title, active_count, capacity')
         .eq('id', courseId)
         .single()
       if (courseError) {
@@ -58,6 +65,7 @@ export default function StudentCourseDetailPage() {
       } else if (course) {
         setCourseTitle(course.title)
         setActiveCount(course.active_count ?? 0)
+        setCapacity(typeof course.capacity === 'number' ? course.capacity : DEFAULT_COURSE_CAPACITY)
       }
 
       // 2. ดึงรายการบทเรียน
@@ -143,7 +151,7 @@ export default function StudentCourseDetailPage() {
   }, [courseId])
 
   const isEnrolled = enrollmentStatus === 'active' || enrollmentStatus === 'completed'
-  const isFull = activeCount >= 5
+  const isFull = isCourseFull(activeCount, capacity)
   const isAllLessonsCompleted = lessons.length === 0 || lessons.every(l => completedLessons.includes(l.id))
 
   // เมื่อเรียนครบทุกบทและทำ Post-test แล้ว ให้อัปเดตสถานะการลงทะเบียนเป็น "completed"
@@ -181,7 +189,7 @@ export default function StudentCourseDetailPage() {
     }
 
     if (isFull) {
-      toast('คอร์สนี้เต็มแล้ว (รองรับผู้เรียนสูงสุด 5 คน)', 'warning')
+      toast(fullCourseMessage(capacity), 'warning')
       setEnrolling(false)
       return
     }
@@ -203,10 +211,13 @@ export default function StudentCourseDetailPage() {
       // อัปเดตจำนวนผู้เรียนทันที (trigger refresh_course_active_count จะเพิ่มยอดให้)
       const { data: updatedCourse } = await supabase
         .from('courses')
-        .select('active_count')
+        .select('active_count, capacity')
         .eq('id', courseId)
         .single()
-      if (updatedCourse) setActiveCount(updatedCourse.active_count ?? 0)
+      if (updatedCourse) {
+        setActiveCount(updatedCourse.active_count ?? 0)
+        if (typeof updatedCourse.capacity === 'number') setCapacity(updatedCourse.capacity)
+      }
     }
     setEnrolling(false)
   }
@@ -247,7 +258,7 @@ export default function StudentCourseDetailPage() {
             กรุณาลงทะเบียนเรียนในรายวิชานี้ก่อน จึงจะสามารถเข้าเรียนและทำแบบทดสอบได้
           </p>
           <div className={`text-xs font-medium ${isFull ? 'text-rose-600' : 'text-secondary'}`}>
-            {isFull ? 'คอร์สนี้เต็มแล้ว (รองรับได้ 5 คน)' : `ที่นั่งว่าง ${5 - activeCount} จาก 5`}
+            {capacityLabel(activeCount, capacity)}
           </div>
           <div className="flex items-center justify-center gap-3">
             <button
@@ -329,7 +340,7 @@ export default function StudentCourseDetailPage() {
           </h3>
 
           <div className="space-y-2">
-            {lessons.map((lesson) => {
+            {lessons.map((lesson, index) => {
               const isDone = completedLessons.includes(lesson.id)
               return (
                 <div
@@ -342,7 +353,7 @@ export default function StudentCourseDetailPage() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-purple-600 w-12">บทที่ {lesson.order_index}</span>
+                    <span className="text-xs font-bold text-purple-600 w-12">บทที่ {index + 1}</span>
                     <span className="text-sm font-medium text-ink">{lesson.title}</span>
                   </div>
 

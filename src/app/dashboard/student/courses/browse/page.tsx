@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast'
 import Link from 'next/link'
 import { Search, BookOpen, Clock, CheckCircle, ArrowLeft } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
+import { capacityLabel, capacityOf, fullCourseMessage, isCourseFull } from '@/lib/capacity'
 
 interface Course {
   id: string
@@ -13,6 +14,7 @@ interface Course {
   description: string
   created_at: string
   active_count?: number
+  capacity?: number
 }
 
 export default function BrowseCoursesPage() {
@@ -69,8 +71,9 @@ export default function BrowseCoursesPage() {
     }
 
     const course = courses.find((c) => c.id === courseId)
-    if ((course?.active_count ?? 0) >= 5 && !enrolledIds.has(courseId)) {
-      toast('คอร์สนี้เต็มแล้ว (รองรับผู้เรียนสูงสุด 5 คน)', 'warning')
+    const cap = capacityOf(course)
+    if (isCourseFull(course?.active_count ?? 0, cap) && !enrolledIds.has(courseId)) {
+      toast(fullCourseMessage(cap), 'warning')
       setEnrollingId(null)
       return
     }
@@ -90,6 +93,17 @@ export default function BrowseCoursesPage() {
       toast('เกิดข้อผิดพลาดในการลงทะเบียน: ' + error.message, 'error')
     } else {
       setEnrolledIds(prev => new Set(prev).add(courseId))
+      // ดึงจำนวนที่นั่งล่าสุดกลับมา เพราะ trigger จะอัปเดตหลัง insert
+      // ถ้าไม่ refetch การ์ดจะยังแสดงที่นั่งว่างตามค่าเก่า (เช่น 1/1 ทั้งที่เต็มแล้ว)
+      const { data: updatedCourse } = await supabase
+        .from('courses')
+        .select('active_count')
+        .eq('id', courseId)
+        .single()
+      if (updatedCourse) {
+        const nextActive = updatedCourse.active_count ?? 0
+        setCourses(prev => prev.map(c => (c.id === courseId ? { ...c, active_count: nextActive } : c)))
+      }
     }
     setEnrollingId(null)
   }
@@ -155,8 +169,8 @@ export default function BrowseCoursesPage() {
           <div className="grid md:grid-cols-2 gap-6">
             {filteredCourses.map((course) => {
               const isEnrolled = enrolledIds.has(course.id)
-              const seats = course.active_count ?? 0
-              const isFull = seats >= 5
+              const cap = capacityOf(course)
+              const isFull = isCourseFull(course.active_count ?? 0, cap)
               return (
                 <div key={course.id} className="bg-white border border-border rounded-xl p-6 flex flex-col justify-between hover:border-primary-dark/50 transition">
                   <div className="space-y-3">
@@ -190,7 +204,7 @@ export default function BrowseCoursesPage() {
                     ) : (
                       <div className="flex flex-col items-end gap-1.5">
                         <span className={`text-[11px] font-medium ${isFull ? 'text-rose-600' : 'text-secondary'}`}>
-                          {isFull ? 'คอร์สเต็มแล้ว (5/5)' : `ที่นั่งว่าง ${5 - seats} จาก 5`}
+                          {capacityLabel(course.active_count ?? 0, cap)}
                         </span>
                         <button
                           onClick={() => handleEnroll(course.id)}

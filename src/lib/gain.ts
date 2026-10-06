@@ -36,9 +36,11 @@ function toPercent(row: GainScoreRow): number | null {
 
 // Normalized Gain: g = (post% - pre%) / (100 - pre%)
 // คำนวณจากร้อยละ จึงไม่พังเมื่อจำนวนข้อ Pre-test กับ Post-test ไม่เท่ากัน
+// กรณี pre% = 100 (เพดานผลการเรียน) สูตรหารด้วยศูนย์ไม่ได้จึงตั้ง g = 0
+// ตามแนวทาง Hake ที่ถือว่าไม่มีช่องให้เพิ่มขึ้นได้ จึงไม่นับเป็นการเรียนรู้สูง
 export function computeGain(prePct: number | null, postPct: number | null): number | null {
   if (prePct === null || postPct === null) return null
-  if (prePct >= 100) return postPct >= prePct ? 1 : 0
+  if (prePct >= 100) return 0
   return round2(Math.max(0, Math.min(1, (postPct - prePct) / (100 - prePct))))
 }
 

@@ -8,6 +8,14 @@ import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Skeleton from '@/components/ui/Skeleton'
+import {
+  DEFAULT_COURSE_CAPACITY,
+  MAX_COURSE_CAPACITY,
+  MIN_COURSE_CAPACITY,
+  capacityReduceError,
+  occupancyLabel,
+  parseCapacity,
+} from '@/lib/capacity'
 
 interface Course {
   id: string
@@ -15,6 +23,8 @@ interface Course {
   description: string
   created_at: string
   status?: string
+  active_count?: number
+  capacity?: number
   lessons_count?: number
   questions_count?: number
   enrollments_count?: number
@@ -29,12 +39,16 @@ export default function AdminCoursesPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDescription, setNewDescription] = useState('')
+  const [newCapacity, setNewCapacity] = useState(String(DEFAULT_COURSE_CAPACITY))
+  const [newCapacityError, setNewCapacityError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // State สำหรับ Modal แก้ไขวิชา
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [editCapacity, setEditCapacity] = useState(String(DEFAULT_COURSE_CAPACITY))
+  const [editCapacityError, setEditCapacityError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
 
   // State สำหรับยืนยันลบ
@@ -78,6 +92,13 @@ export default function AdminCoursesPage() {
       toast('กรุณากรอกชื่อรายวิชา', 'warning')
       return
     }
+    const parsedCapacity = parseCapacity(newCapacity)
+    if (parsedCapacity.error) {
+      setNewCapacityError(parsedCapacity.error)
+      toast(parsedCapacity.error, 'warning')
+      return
+    }
+    setNewCapacityError(null)
     if (submitting) return
 
     setSubmitting(true)
@@ -89,6 +110,7 @@ export default function AdminCoursesPage() {
       title: newTitle.trim(),
       description: newDescription.trim(),
       status: 'published',
+      capacity: parsedCapacity.value,
     }
     if (user) insertData.created_by = user.id
 
@@ -102,11 +124,12 @@ export default function AdminCoursesPage() {
           user_id: user?.id ?? null,
           action: 'create_course',
           target_type: 'course',
-          detail: `สร้างรายวิชา "${newTitle.trim()}"`,
+          detail: `สร้างรายวิชา "${newTitle.trim()}" (รองรับ ${parsedCapacity.value} คน)`,
         },
       ]).then(() => {})
       setNewTitle('')
       setNewDescription('')
+      setNewCapacity(String(DEFAULT_COURSE_CAPACITY))
       setIsCreating(false)
       fetchCourses()
     }
@@ -118,6 +141,8 @@ export default function AdminCoursesPage() {
     setEditingCourse(course)
     setEditTitle(course.title)
     setEditDescription(course.description || '')
+    setEditCapacity(String(course.capacity ?? DEFAULT_COURSE_CAPACITY))
+    setEditCapacityError(null)
   }
 
   // ฟังก์ชันบันทึกการแก้ไขวิชา
@@ -127,17 +152,38 @@ export default function AdminCoursesPage() {
       toast('กรุณากรอกชื่อรายวิชา', 'warning')
       return
     }
+    const parsedCapacity = parseCapacity(editCapacity)
+    if (parsedCapacity.error) {
+      setEditCapacityError(parsedCapacity.error)
+      toast(parsedCapacity.error, 'warning')
+      return
+    }
+    const reduceError = capacityReduceError(parsedCapacity.value, editingCourse.active_count ?? 0)
+    if (reduceError) {
+      setEditCapacityError(reduceError)
+      toast(reduceError, 'warning')
+      return
+    }
+    setEditCapacityError(null)
     if (editing) return
     setEditing(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('courses')
-      .update({ title: editTitle.trim(), description: editDescription.trim() })
+      .update({
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        capacity: parsedCapacity.value,
+      })
       .eq('id', editingCourse.id)
+      .select('id')
+      .maybeSingle()
 
     if (error) {
       toast('เกิดข้อผิดพลาดในการแก้ไขรายวิชา: ' + error.message, 'error')
+    } else if (!updated) {
+      toast('บันทึกการแก้ไขไม่สำเร็จ (ไม่พบรายวิชาหรือไม่มีสิทธิ์แก้ไข)', 'error')
     } else {
       await supabase.from('activity_logs').insert([
         {
@@ -145,7 +191,7 @@ export default function AdminCoursesPage() {
           action: 'edit_course',
           target_type: 'course',
           target_id: editingCourse.id,
-          detail: `แก้ไขรายวิชา "${editTitle.trim()}"`,
+          detail: `แก้ไขรายวิชา "${editTitle.trim()}" (รองรับ ${parsedCapacity.value} คน)`,
         },
       ]).then(() => {})
       setEditingCourse(null)
@@ -282,6 +328,29 @@ export default function AdminCoursesPage() {
               />
             </div>
 
+            <div>
+              <label htmlFor="course-capacity-create" className="block text-xs font-semibold text-ink mb-1">
+                จำนวนผู้เรียนสูงสุด
+              </label>
+              <input
+                id="course-capacity-create"
+                type="number"
+                min={MIN_COURSE_CAPACITY}
+                max={MAX_COURSE_CAPACITY}
+                value={newCapacity}
+                onChange={(e) => {
+                  setNewCapacity(e.target.value)
+                  setNewCapacityError(parseCapacity(e.target.value).error)
+                }}
+                aria-invalid={newCapacityError ? true : undefined}
+                aria-describedby="course-capacity-create-helper"
+                className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-blue-500"
+              />
+              <p id="course-capacity-create-helper" className="mt-1 text-xs text-secondary">
+                {newCapacityError ?? `ระหว่าง ${MIN_COURSE_CAPACITY} - ${MAX_COURSE_CAPACITY} คน (ค่าเริ่มต้น ${DEFAULT_COURSE_CAPACITY} คน)`}
+              </p>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -324,6 +393,29 @@ export default function AdminCoursesPage() {
                 onChange={(e) => setEditDescription(e.target.value)}
                 className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-blue-500 resize-none"
               />
+            </div>
+            <div>
+              <label htmlFor="course-capacity-edit" className="block text-xs font-semibold text-ink mb-1">
+                จำนวนผู้เรียนสูงสุด
+              </label>
+              <input
+                id="course-capacity-edit"
+                type="number"
+                min={MIN_COURSE_CAPACITY}
+                max={MAX_COURSE_CAPACITY}
+                value={editCapacity}
+                onChange={(e) => {
+                  setEditCapacity(e.target.value)
+                  setEditCapacityError(parseCapacity(e.target.value).error)
+                }}
+                aria-invalid={editCapacityError ? true : undefined}
+                aria-describedby="course-capacity-edit-helper"
+                className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-blue-500"
+              />
+              <p id="course-capacity-edit-helper" className="mt-1 text-xs text-secondary">
+                {editCapacityError
+                  ?? `ระหว่าง ${MIN_COURSE_CAPACITY} - ${MAX_COURSE_CAPACITY} คน · ผู้เรียนที่ลงทะเบียนแล้ว ${editingCourse?.active_count ?? 0} คน`}
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -442,6 +534,9 @@ export default function AdminCoursesPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="w-3.5 h-3.5 text-emerald-600" /> {course.enrollments_count} คนเรียน
+                    </span>
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-light text-primary-dark border border-primary/30 font-semibold">
+                      {occupancyLabel(course.active_count ?? 0, course.capacity ?? DEFAULT_COURSE_CAPACITY)}
                     </span>
                   </div>
                 </div>

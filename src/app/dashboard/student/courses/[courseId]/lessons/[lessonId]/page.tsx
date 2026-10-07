@@ -125,7 +125,7 @@ export default function StudentLessonPage() {
 
   // สร้าง YouTube Player (IFrame API) เมื่อบทเรียนมีวิดีโอ YouTube และโหมด content
   useEffect(() => {
-    if (!lesson || mode !== 'content') return
+    if (loading || !lesson || mode !== 'content') return
 
     const url = lesson.video_url || ''
     const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
@@ -176,7 +176,7 @@ export default function StudentLessonPage() {
       ytPlayerRef.current?.destroy()
       ytPlayerRef.current = null
     }
-  }, [lesson, mode, handleContentFinished])
+  }, [loading, lesson, mode, handleContentFinished])
 
   // บันทึกผล "เรียนจบ" สำหรับบทเรียนที่ไม่มีแบบทดสอบ (total_questions = 0)
   // เพื่อให้บทเรียนนี้ถูกนับรวมใน completedLessons ของหน้ารายวิชา (แก้ P1-1)

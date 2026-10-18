@@ -91,6 +91,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Link href="/dashboard/instructor/reports" className={navLink('/dashboard/instructor/reports', pathname.startsWith('/dashboard/instructor/reports'))} onClick={() => setMobileOpen(false)}>
         <BarChart3 className="w-4 h-4" /> รายงาน
       </Link>
+      <Link href="/dashboard/instructor/students" className={navLink('/dashboard/instructor/students', pathname.startsWith('/dashboard/instructor/students'))} onClick={() => setMobileOpen(false)}>
+        <Users className="w-4 h-4" /> นักเรียนของฉัน
+      </Link>
       <Link href="/dashboard/instructor/create-course" className={navLink('/dashboard/instructor/create-course', pathname.startsWith('/dashboard/instructor/create-course'))} onClick={() => setMobileOpen(false)}>
         <PlusCircle className="w-4 h-4" /> สร้างรายวิชา
       </Link>

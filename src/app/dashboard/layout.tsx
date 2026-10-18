@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, GraduationCap, BookOpen, Users, BarChart3, Layers, History, Smile, TrendingUp, PlusCircle, Menu, X } from 'lucide-react'
+import { LogOut, GraduationCap, BookOpen, Users, BarChart3, Layers, History, TrendingUp, PlusCircle, Menu, X } from 'lucide-react'
 import { ToastProvider } from '@/components/ui/Toast'
 import Button from '@/components/ui/Button'
 
@@ -70,9 +70,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </Link>
       <Link href="/dashboard/admin/reports" className={navLink('/dashboard/admin/reports', pathname.startsWith('/dashboard/admin/reports'))} onClick={() => setMobileOpen(false)}>
         <BarChart3 className="w-4 h-4" /> รายงาน
-      </Link>
-      <Link href="/dashboard/admin/satisfaction" className={navLink('/dashboard/admin/satisfaction', pathname.startsWith('/dashboard/admin/satisfaction'))} onClick={() => setMobileOpen(false)}>
-        <Smile className="w-4 h-4" /> ความพึงพอใจ
       </Link>
       <Link href="/dashboard/admin/users" className={navLink('/dashboard/admin/users', pathname.startsWith('/dashboard/admin/users'))} onClick={() => setMobileOpen(false)}>
         <Users className="w-4 h-4" /> ผู้ใช้งาน

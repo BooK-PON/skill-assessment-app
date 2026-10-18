@@ -10,6 +10,7 @@ import { computeSkillDims, SkillAttemptRow, SkillDim } from '@/lib/survey'
 import SkillRadarChart from '@/components/charts/SkillRadarChart'
 import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
 import SkillDimCards from '@/components/charts/SkillDimCards'
+import { openSatisfactionForm } from '@/lib/satisfaction-form'
 import {
   DEFAULT_COURSE_CAPACITY,
   capacityLabel,
@@ -34,7 +35,6 @@ export default function StudentCourseDetailPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [hasPreTest, setHasPreTest] = useState(false)
   const [hasPostTest, setHasPostTest] = useState(false)
-  const [hasSurvey, setHasSurvey] = useState(false)
   const [completedLessons, setCompletedLessons] = useState<string[]>([])
   const [enrollmentStatus, setEnrollmentStatus] = useState<string | null>(null)
   const [enrolling, setEnrolling] = useState(false)
@@ -117,20 +117,7 @@ export default function StudentCourseDetailPage() {
           setCompletedLessons(uniqueDoneIds)
         }
 
-        // 5. เช็คว่าเคยตอบแบบประเมินความพึงพอใจแล้วหรือยัง
-        const { data: surveyRow, error: surveyError } = await supabase
-          .from('satisfaction_surveys')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('course_id', courseId)
-          .limit(1)
-        if (surveyError) {
-          mergeError(surveyError.message)
-        } else {
-          setHasSurvey(surveyRow !== null && surveyRow.length > 0)
-        }
-
-        // 6. ดึงผลการตอบรายข้อ เพื่อคำนวณทักษะ 5 ด้านของรายวิชานี้ (ประเมินเฉพาะคอร์สนี้ ไม่รวมทุกคอร์ส)
+        // 5. ดึงผลการตอบรายข้อ เพื่อคำนวณทักษะ 5 ด้านของรายวิชานี้ (ประเมินเฉพาะคอร์สนี้ ไม่รวมทุกคอร์ส)
         const { data: attempts, error: attemptsError } = await supabase
           .from('assessment_attempts')
           .select('assessment_type, skill_dimension, is_correct')
@@ -406,12 +393,12 @@ export default function StudentCourseDetailPage() {
               </span>
             )}
           </div>
-          {hasPostTest && !hasSurvey && (
+          {hasPostTest && (
             <button
-              onClick={() => router.push(`/dashboard/student/courses/${courseId}/satisfaction`)}
+              onClick={openSatisfactionForm}
               className="mt-3 inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-ink text-xs font-semibold px-4 py-2 rounded-xl transition"
             >
-              <Award className="w-4 h-4" /> ทำแบบประเมินความพึงพอใจ (5 ข้อ)
+              <Award className="w-4 h-4" /> ทำแบบประเมินความพึงพอใจ (20 ข้อ)
             </button>
           )}
         </div>

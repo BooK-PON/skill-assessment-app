@@ -10,6 +10,7 @@ import SkillRadarChart from '@/components/charts/SkillRadarChart'
 import ComparisonBarChart from '@/components/charts/ComparisonBarChart'
 import SkillDimCards from '@/components/charts/SkillDimCards'
 import { csvCell, downloadCsv } from '@/lib/csv'
+import { openSatisfactionForm } from '@/lib/satisfaction-form'
 
 interface CourseRow {
   course_id: string
@@ -328,12 +329,12 @@ export default function StudentProgressPage() {
                   <SkillDimCards dims={dims} />
 
                   {hasPosttest && selected && (
-                    <Link
-                      href={`/dashboard/student/courses/${selected}/satisfaction`}
+                    <button
+                      onClick={openSatisfactionForm}
                       className="mt-2 inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-ink text-sm font-semibold px-5 py-2.5 rounded-xl transition"
                     >
-                      <Sparkles className="w-4 h-4" /> ทำแบบประเมินความพึงพอใจ (5 ข้อ)
-                    </Link>
+                      <Sparkles className="w-4 h-4" /> ทำแบบประเมินความพึงพอใจ (20 ข้อ)
+                    </button>
                   )}
                 </>
               )}

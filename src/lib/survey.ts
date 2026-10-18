@@ -1,15 +1,5 @@
-export const SURVEY_DIMENSIONS = [
-  { key: 'content', label: 'เนื้อหาและคุณภาพวิชา' },
-  { key: 'media', label: 'สื่อการเรียน' },
-  { key: 'usability', label: 'ความสะดวกในการใช้งาน' },
-  { key: 'performance', label: 'ความเร็วและประสิทธิภาพ' },
-  { key: 'reliability', label: 'ความน่าเชื่อถือของข้อมูล' },
-] as const
-
-export type SurveyDimensionKey = (typeof SURVEY_DIMENSIONS)[number]['key']
-
-export const SURVEY_DIMENSION_LABELS: Record<string, string> =
-  Object.fromEntries(SURVEY_DIMENSIONS.map((d) => [d.key, d.label]))
+// หมายเหตุ: แบบประเมินความพึงพอใจย้ายไป Google Form ภายนอกแล้ว (ดู src/lib/satisfaction-form.ts)
+// เหลือเฉพาะทักษะ 5 ด้าน (SKILL_*) ที่ใช้คำนวณกราฟ Pre/Post
 
 export const SKILL_DIMENSIONS = [
   { key: 'knowledge', label: 'ความรู้พื้นฐาน' },

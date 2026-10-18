@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
 import { CheckCircle2, ArrowRight, ShieldAlert, Smile } from 'lucide-react'
 import Skeleton from '@/components/ui/Skeleton'
+import { openSatisfactionForm } from '@/lib/satisfaction-form'
 
 interface Question {
   id: string
@@ -163,8 +164,8 @@ export default function StudentAssessmentPage() {
           },
         ]).then(() => {})
       }
-    } catch (err: any) {
-      toast('เกิดข้อผิดพลาดในการบันทึกคะแนน: ' + (err.message || 'กรุณาลองใหม่'), 'error')
+    } catch (err) {
+      toast('เกิดข้อผิดพลาดในการบันทึกคะแนน: ' + (err instanceof Error ? err.message : 'กรุณาลองใหม่'), 'error')
       setSubmitting(false)
       return
     }
@@ -283,18 +284,18 @@ export default function StudentAssessmentPage() {
               <span className="text-secondary text-lg"> / {questions.length} คะแนน</span>
             </div>
 
-            {/* ส่วนที่เพิ่มใหม่: ลิงก์แบบประเมินความพึงพอใจ (ในเว็บ) เฉพาะเมื่อ Post-test เสร็จ */}
+            {/* ขั้นตอนสุดท้าย: ลิงก์แบบประเมินความพึงพอใจผ่าน Google Forms (ไม่ระบุตัวตน) เฉพาะเมื่อ Post-test เสร็จ */}
             {type === 'post' && (
               <div className="mt-8 pt-6 border-t border-border space-y-4 text-left">
                 <div>
                   <h3 className="text-lg font-bold text-ink">ขั้นตอนสุดท้าย: แบบประเมินความพึงพอใจการใช้งานระบบ</h3>
-                  <p className="text-xs text-secondary">กรุณาตอบแบบประเมินเพื่อเสร็จสิ้นการเรียนในรายวิชานี้</p>
+                  <p className="text-xs text-secondary">กรุณาตอบแบบประเมิน (20 ข้อ) เพื่อเสร็จสิ้นการเรียนในรายวิชานี้ — เปิดในแท็บใหม่ ไม่ระบุชื่อผู้ตอบ</p>
                 </div>
                 <button
-                  onClick={() => router.push(`/dashboard/student/courses/${courseId}/satisfaction`)}
+                  onClick={openSatisfactionForm}
                   className="inline-flex items-center justify-center gap-2 w-full bg-amber-500 hover:bg-amber-400 text-ink font-bold text-sm px-6 py-3 rounded-xl transition"
                 >
-                  <Smile className="w-5 h-5" /> ทำแบบประเมินความพึงพอใจ (5 ข้อ)
+                  <Smile className="w-5 h-5" /> ทำแบบประเมินความพึงพอใจ (20 ข้อ)
                 </button>
               </div>
             )}

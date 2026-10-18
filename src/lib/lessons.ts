@@ -31,6 +31,23 @@ export function toPdfEmbedUrl(url: string): string {
   return url
 }
 
+// แปลง URL YouTube หลายรูปแบบ (watch?v= / youtu.be / /embed/) ให้เป็น embed URL สำหรับ iframe
+export function toYouTubeEmbedUrl(url: string): string | null {
+  try {
+    let videoId: string | null = null
+    if (url.includes('watch?v=')) {
+      videoId = new URL(url).searchParams.get('v')
+    } else if (url.includes('youtu.be/')) {
+      videoId = url.split('youtu.be/')[1]?.split('?')[0] || null
+    } else if (url.includes('/embed/')) {
+      videoId = url.split('/embed/')[1]?.split('?')[0] || null
+    }
+    return videoId ? `https://www.youtube.com/embed/${videoId}` : null
+  } catch {
+    return null
+  }
+}
+
 const LESSON_FIELDS = 'id, order_index, lesson_number'
 
 export function nextLessonOrder(lessons: LessonOrderRow[]): number {

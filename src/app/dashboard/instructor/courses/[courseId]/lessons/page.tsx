@@ -5,10 +5,11 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { nextLessonOrder, renumberLessons, isValidMediaUrl, MAX_LESSONS_PER_COURSE, MIN_LESSONS_PER_COURSE } from '@/lib/lessons'
 import Link from 'next/link'
-import { ArrowLeft, Plus, BookOpen, Trash2, Video, FileText, X } from 'lucide-react'
+import { ArrowLeft, Plus, BookOpen, Trash2, Video, FileText, Pencil } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Skeleton from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
+import LessonFormModal, { LessonDraft } from '@/components/dashboard/LessonFormModal'
 
 interface Lesson {
   id: string
@@ -32,13 +33,26 @@ export default function InstructorLessonsPage() {
   const [blocked, setBlocked] = useState(false)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
-  const [videoUrl, setVideoUrl] = useState('')
-  const [pdfUrl, setPdfUrl] = useState('')
+  const [modalKey, setModalKey] = useState(0)
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
+
+  const openCreate = () => {
+    setEditingLesson(null)
+    setModalKey((k) => k + 1)
+    setIsModalOpen(true)
+  }
+  const openEdit = (lesson: Lesson) => {
+    setEditingLesson(lesson)
+    setModalKey((k) => k + 1)
+    setIsModalOpen(true)
+  }
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setEditingLesson(null)
+  }
 
   const { toast } = useToast()
 
@@ -92,21 +106,20 @@ export default function InstructorLessonsPage() {
     if (courseId) fetchData()
   }, [courseId])
 
-  const handleCreateLesson = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleCreateLesson = async (draft: LessonDraft) => {
     if (blocked) {
       toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
       return
     }
-    if (!title.trim()) {
+    if (!draft.title) {
       toast('กรุณากรอกชื่อบทเรียน', 'warning')
       return
     }
-    if (!isValidMediaUrl(videoUrl)) {
+    if (!isValidMediaUrl(draft.video_url)) {
       toast('ลิงก์วิดีโอต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น', 'warning')
       return
     }
-    if (!isValidMediaUrl(pdfUrl)) {
+    if (!isValidMediaUrl(draft.pdf_url)) {
       toast('ลิงก์ PDF ต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น', 'warning')
       return
     }
@@ -122,10 +135,10 @@ export default function InstructorLessonsPage() {
     const { error } = await supabase.from('lessons').insert([
       {
         course_id: courseId,
-        title,
-        content,
-        video_url: videoUrl,
-        pdf_url: pdfUrl,
+        title: draft.title,
+        content: draft.content,
+        video_url: draft.video_url,
+        pdf_url: draft.pdf_url,
         order_index: nextOrder,
         lesson_number: nextOrder,
       },
@@ -135,11 +148,49 @@ export default function InstructorLessonsPage() {
       toast('เกิดข้อผิดพลาด: ' + error.message, 'error')
     } else {
       toast('เพิ่มบทเรียนแล้ว', 'success')
-      setTitle('')
-      setContent('')
-      setVideoUrl('')
-      setPdfUrl('')
-      setIsModalOpen(false)
+      closeModal()
+      fetchData()
+    }
+    setSubmitting(false)
+  }
+
+  const handleUpdateLesson = async (draft: LessonDraft) => {
+    if (blocked || !editingLesson) {
+      toast('คุณไม่มีสิทธิ์จัดการคอร์สนี้', 'error')
+      return
+    }
+    if (!draft.title) {
+      toast('กรุณากรอกชื่อบทเรียน', 'warning')
+      return
+    }
+    if (!isValidMediaUrl(draft.video_url)) {
+      toast('ลิงก์วิดีโอต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น', 'warning')
+      return
+    }
+    if (!isValidMediaUrl(draft.pdf_url)) {
+      toast('ลิงก์ PDF ต้องเป็น URL บนอินเทอร์เน็ต (http/https) เท่านั้น', 'warning')
+      return
+    }
+
+    setSubmitting(true)
+    const { data: updatedRows, error } = await supabase
+      .from('lessons')
+      .update({
+        title: draft.title,
+        content: draft.content,
+        video_url: draft.video_url,
+        pdf_url: draft.pdf_url,
+      })
+      .eq('id', editingLesson.id)
+      .select('id')
+
+    if (error) {
+      toast('เกิดข้อผิดพลาด: ' + error.message, 'error')
+    } else if (!updatedRows || updatedRows.length === 0) {
+      toast('แก้ไขบทเรียนไม่สำเร็จ: ไม่พบบทเรียนที่ต้องการแก้ (หรือไม่มีสิทธิ์แก้ไข)', 'error')
+    } else {
+      toast('แก้ไขบทเรียนแล้ว', 'success')
+      closeModal()
       fetchData()
     }
     setSubmitting(false)
@@ -230,7 +281,7 @@ export default function InstructorLessonsPage() {
 
           {!blocked && (
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={openCreate}
               className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-medium px-4 py-2 rounded-xl text-sm transition shadow-sm"
             >
               <Plus className="w-4 h-4" /> เพิ่มบทเรียนใหม่
@@ -238,86 +289,16 @@ export default function InstructorLessonsPage() {
           )}
         </div>
 
-        {isModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white border border-border rounded-2xl p-6 w-full max-w-lg space-y-4 shadow-xl">
-              <div className="flex justify-between items-center border-b border-border pb-3">
-                <h3 className="font-bold text-lg text-ink">เพิ่มบทเรียนที่ {nextLessonOrder(lessons)}</h3>
-                <button onClick={() => setIsModalOpen(false)} className="text-secondary hover:text-ink">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateLesson} className="space-y-3">
-                <div>
-                  <label htmlFor="lesson-title" className="block text-xs font-semibold text-ink mb-1">ชื่อบทเรียน *</label>
-                  <input
-                    id="lesson-title"
-                    type="text"
-                    required
-                    placeholder="เช่น บทที่ 1: แนะนำเนื้อหาเบื้องต้น"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="lesson-content" className="block text-xs font-semibold text-ink mb-1">คำอธิบาย/เนื้อหาบทเรียน</label>
-                  <textarea
-                    id="lesson-content"
-                    rows={3}
-                    placeholder="สรุปเนื้อหาสั้นๆ ของบทนี้..."
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-purple-500 resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="video-url" className="block text-xs font-semibold text-ink mb-1">URL คลิปวิดีโอ (YouTube หรือ Supabase Storage)</label>
-                  <input
-                    id="video-url"
-                    type="url"
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    value={videoUrl}
-                    onChange={(e) => setVideoUrl(e.target.value)}
-                    className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="pdf-url" className="block text-xs font-semibold text-ink mb-1">URL เอกสารประกอบ (PDF)</label>
-                  <input
-                    id="pdf-url"
-                    type="url"
-                    placeholder="https://.../document.pdf"
-                    value={pdfUrl}
-                    onChange={(e) => setPdfUrl(e.target.value)}
-                    className="w-full bg-white border border-border rounded-lg p-2.5 text-sm text-ink focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-lg text-sm bg-white border border-border text-secondary hover:bg-surface"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-4 py-2 rounded-lg text-sm bg-purple-600 text-white font-medium hover:bg-purple-500 disabled:opacity-50"
-                  >
-                    {submitting ? 'กำลังบันทึก...' : 'บันทึกบทเรียน'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        <LessonFormModal
+          key={modalKey}
+          open={isModalOpen}
+          mode={editingLesson ? 'edit' : 'create'}
+          initial={editingLesson}
+          nextOrder={nextLessonOrder(lessons)}
+          submitting={submitting}
+          onClose={closeModal}
+          onSubmit={(draft) => (editingLesson ? handleUpdateLesson(draft) : handleCreateLesson(draft))}
+        />
 
         {error ? (
           <div role="alert" className="bg-red-500/10 border border-red-500/20 text-red-600 p-4 rounded-xl text-sm">
@@ -356,13 +337,24 @@ export default function InstructorLessonsPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleDeleteLesson(lesson.id, lesson.title)}
-                  className="text-secondary hover:text-rose-600 p-2 transition"
-                  title="ลบบทเรียน"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => openEdit(lesson)}
+                    className="text-secondary hover:text-purple-600 p-2 transition"
+                    title="แก้ไขบทเรียน"
+                    aria-label={`แก้ไขบทเรียน ${lesson.title}`}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteLesson(lesson.id, lesson.title)}
+                    className="text-secondary hover:text-rose-600 p-2 transition"
+                    title="ลบบทเรียน"
+                    aria-label={`ลบบทเรียน ${lesson.title}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -198,7 +198,7 @@ export default function InstructorCoursesPage() {
         {/* MODAL: เพิ่มวิชาใหม่ */}
         {isCreating && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white border border-border rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+            <div className="bg-white border border-border rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
               <div className="flex justify-between items-center border-b border-border pb-3">
                 <h3 className="font-bold text-lg text-ink flex items-center gap-2">
                   <FolderPlus className="w-5 h-5 text-purple-600" /> เพิ่มรายวิชาใหม่

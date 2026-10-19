@@ -634,7 +634,7 @@ export default function StudentLessonPage() {
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="quiz-prompt-title"
-            className="bg-white border border-border rounded-2xl p-6 w-full max-w-md space-y-4 shadow-lg"
+            className="bg-white border border-border rounded-2xl p-6 w-full max-w-md space-y-4 shadow-lg max-h-[calc(100dvh-2rem)] overflow-y-auto"
           >
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 p-3 bg-primary-light text-primary-dark rounded-xl">

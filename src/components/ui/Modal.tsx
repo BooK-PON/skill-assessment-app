@@ -36,7 +36,7 @@ export default function Modal({
       aria-modal="true"
       aria-label={title}
     >
-      <div className={`w-full ${maxWidth} space-y-4 rounded-2xl border border-border bg-white p-6 shadow-2xl`}>
+      <div className={`w-full ${maxWidth} max-h-[calc(100dvh-2rem)] overflow-y-auto space-y-4 rounded-2xl border border-border bg-white p-6 shadow-2xl`}>
         <div className="flex items-center justify-between border-b border-border pb-3">
           <h3 className="text-base font-bold text-ink">{title}</h3>
           <button
